@@ -1,0 +1,5 @@
+{
+  "name": "Copy of Champ Traxon Connector",
+  "description": "A logistics dashboard to manage and transmit Air Waybills (AWB) and Consolidations to the Champ Traxon CargoJSON API.",
+  "requestFramePermissions": []
+}

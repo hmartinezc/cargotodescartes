@@ -1,0 +1,121 @@
+{
+  "type": "consolidation list",
+  "id": "test-csl-001",
+  "messageHeader": {
+    "addressing": {
+      "senderAddresses": [
+        {
+          "type": "PIMA",
+          "address": "REUFFW90AVTOPF/BOG01"
+        }
+      ],
+      "finalRecipientAddresses": [
+        {
+          "type": "PIMA",
+          "address": "USCAIR01LUXXSXS"
+        }
+      ]
+    },
+    "creationDate": "2025-12-17T10:00:00.000"
+  },
+  "airWaybillNumber": "145-98765432",
+  "originAndDestination": {
+    "origin": "BOG",
+    "destination": "MIA"
+  },
+  "quantity": {
+    "shipmentDescriptionCode": "TOTAL_CONSIGNMENT",
+    "numberOfPieces": "75",
+    "weight": {
+      "amount": "1275.0",
+      "unit": "KILOGRAM"
+    }
+  },
+  "houseWaybillSummaries": [
+    {
+      "serialNumber": "HAWB2025001",
+      "origin": "BOG",
+      "destination": "MIA",
+      "numberOfPieces": "25",
+      "weight": {
+        "amount": "425.0",
+        "unit": "KILOGRAM"
+      },
+      "natureOfGoods": "ROSES RED",
+      "oci": [
+        {
+          "isoCountryCode": "US",
+          "informationIdentifier": "ISS",
+          "controlInformation": "SECURITY_STATUS",
+          "additionalControlInformation": "SPX",
+          "supplementaryControlInformation": "RA-CO-01234-567"
+        }
+      ]
+    },
+    {
+      "serialNumber": "HAWB2025002",
+      "origin": "BOG",
+      "destination": "MIA",
+      "numberOfPieces": "25",
+      "weight": {
+        "amount": "425.0",
+        "unit": "KILOGRAM"
+      },
+      "natureOfGoods": "CARNATIONS",
+      "oci": [
+        {
+          "isoCountryCode": "US",
+          "informationIdentifier": "ISS",
+          "controlInformation": "SECURITY_STATUS",
+          "additionalControlInformation": "SPX",
+          "supplementaryControlInformation": "RA-CO-01234-567"
+        }
+      ]
+    },
+    {
+      "serialNumber": "HAWB2025003",
+      "origin": "BOG",
+      "destination": "MIA",
+      "numberOfPieces": "25",
+      "weight": {
+        "amount": "425.0",
+        "unit": "KILOGRAM"
+      },
+      "natureOfGoods": "ORCHIDS",
+      "oci": [
+        {
+          "isoCountryCode": "US",
+          "informationIdentifier": "ISS",
+          "controlInformation": "SECURITY_STATUS",
+          "additionalControlInformation": "SPX",
+          "supplementaryControlInformation": "RA-CO-01234-567"
+        }
+      ]
+    }
+  ],
+  "shipper": {
+    "address": {
+      "name1": "CONSOLIDADORA FLORES COLOMBIA SAS",
+      "streetAddress1": "CRA 7 NO 140-20 PISO 3",
+      "place": "BOGOTA",
+      "country": "CO",
+      "postCode": "110121"
+    }
+  },
+  "consignee": {
+    "address": {
+      "name1": "USA FLOWER DISTRIBUTORS LLC",
+      "streetAddress1": "8000 NW 36TH STREET SUITE 200",
+      "place": "DORAL",
+      "stateProvince": "FL",
+      "country": "US",
+      "postCode": "33166"
+    }
+  },
+  "chargeDeclarations": {
+    "isoCurrencyCode": "USD",
+    "chargeCode": "ALL_CHARGES_COLLECT",
+    "payment_WeightValuation": "Collect",
+    "payment_OtherCharges": "Collect"
+  }
+}

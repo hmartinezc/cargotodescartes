@@ -1,0 +1,139 @@
+{
+  "type": "air waybill",
+  "id": "uat-directo-20251217-json",
+  "messageHeader": {
+    "addressing": {
+      "senderAddresses": [
+        {
+          "type": "PIMA",
+          "address": "REUFFW90AVTOPF/BOG01"
+        }
+      ],
+      "finalRecipientAddresses": [
+        {
+          "type": "PIMA",
+          "address": "USCAIR01LUXXSXS"
+        }
+      ]
+    },
+    "creationDate": "2025-12-17T15:00:00.000"
+  },
+  "airWaybillNumber": "145-55667788",
+  "origin": "BOG",
+  "destination": "MIA",
+  "totalConsignmentNumberOfPieces": "25",
+  "weight": {
+    "amount": "425.0",
+    "unit": "KILOGRAM"
+  },
+  "volume": {
+    "amount": "2.5",
+    "unit": "CUBIC_METRE"
+  },
+  "flights": [
+    {
+      "flight": "LA4567",
+      "scheduledDate": "2025-12-18"
+    }
+  ],
+  "route": [
+    {
+      "carrierCode": "LA",
+      "destination": "MIA"
+    }
+  ],
+  "shipper": {
+    "address": {
+      "name1": "FLORES DIRECTAS DE COLOMBIA SAS",
+      "streetAddress1": "CRA 7 NO 140-20 PISO 3",
+      "place": "BOGOTA",
+      "country": "CO",
+      "postCode": "110121"
+    }
+  },
+  "consignee": {
+    "address": {
+      "name1": "DIRECT FLOWERS USA INC",
+      "streetAddress1": "8000 NW 36TH STREET SUITE 100",
+      "place": "DORAL",
+      "stateProvince": "FL",
+      "country": "US",
+      "postCode": "33166"
+    }
+  },
+  "carriersExecution": {
+    "date": "2025-12-17",
+    "placeOrAirportCityCode": "BOGOTA",
+    "authorisationSignature": "AVTOPF"
+  },
+  "senderReference": {
+    "fileReference": "12345678",
+    "participantIdentifier": {
+      "identifier": "AGT",
+      "code": "AVTOPF",
+      "airportCityCode": "BOG"
+    }
+  },
+  "chargeDeclarations": {
+    "isoCurrencyCode": "USD",
+    "chargeCode": "ALL_CHARGES_COLLECT",
+    "payment_WeightValuation": "Collect",
+    "payment_OtherCharges": "Collect"
+  },
+  "chargeItems": [
+    {
+      "numberOfPieces": "25",
+      "commodityItemNumber": ["0609"],
+      "grossWeight": {
+        "amount": "425.0",
+        "unit": "KILOGRAM"
+      },
+      "goodsDescription": "CUT FLOWERS",
+      "consolidation": "false",
+      "packaging": [
+        {
+          "numberOfPieces": "25",
+          "weight": {
+            "amount": "425.0",
+            "unit": "KILOGRAM"
+          },
+          "volume": {
+            "amount": "2.5",
+            "unit": "CUBIC_METRE"
+          }
+        }
+      ],
+      "charges": [
+        {
+          "chargeableWeight": {
+            "amount": "450",
+            "unit": "KILOGRAM"
+          },
+          "rateClassCode": "QUANTITY_RATE",
+          "rateOrCharge": "1.10",
+          "totalChargeAmount": "495.00"
+        }
+      ]
+    }
+  ],
+  "agent": {
+    "name": "AVTOPF CARGO SAS",
+    "place": "BOGOTA",
+    "iataCargoAgentNumericCode": "1234567",
+    "iataCargoAgentCASSAddress": "0016"
+  },
+  "collectChargeSummary": {
+    "totalWeightCharge": "495.00",
+    "chargeSummaryTotal": "495.00"
+  },
+  "specialHandlingCodes": ["EAP", "PER"],
+  "shippersCertification": "AVTOPF",
+  "oci": [
+    {
+      "isoCountryCode": "CO",
+      "informationIdentifier": "AGT",
+      "additionalControlInformation": "T",
+      "supplementaryControlInformation": "NIT900123456"
+    }
+  ]
+}

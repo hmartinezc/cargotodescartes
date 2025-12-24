@@ -1,0 +1,146 @@
+{
+  "type": "air waybill",
+  "id": "uat-consolidado-20251217-json",
+  "messageHeader": {
+    "addressing": {
+      "senderAddresses": [
+        {
+          "type": "PIMA",
+          "address": "REUFFW90AVTOPF/BOG01"
+        }
+      ],
+      "finalRecipientAddresses": [
+        {
+          "type": "PIMA",
+          "address": "USCAIR01LUXXSXS"
+        }
+      ]
+    },
+    "creationDate": "2025-12-17T15:00:00.000"
+  },
+  "airWaybillNumber": "145-11223344",
+  "origin": "BOG",
+  "destination": "MIA",
+  "totalConsignmentNumberOfPieces": "75",
+  "weight": {
+    "amount": "1275.0",
+    "unit": "KILOGRAM"
+  },
+  "volume": {
+    "amount": "7.5",
+    "unit": "CUBIC_METRE"
+  },
+  "flights": [
+    {
+      "flight": "LA4567",
+      "scheduledDate": "2025-12-18"
+    }
+  ],
+  "route": [
+    {
+      "carrierCode": "LA",
+      "destination": "MIA"
+    }
+  ],
+  "shipper": {
+    "address": {
+      "name1": "CONSOLIDADORA FLORES COLOMBIA SAS",
+      "streetAddress1": "CRA 7 NO 140-20 PISO 3",
+      "place": "BOGOTA",
+      "country": "CO",
+      "postCode": "110121"
+    }
+  },
+  "consignee": {
+    "address": {
+      "name1": "USA FLOWER DISTRIBUTORS LLC",
+      "streetAddress1": "8000 NW 36TH STREET SUITE 200",
+      "place": "DORAL",
+      "stateProvince": "FL",
+      "country": "US",
+      "postCode": "33166"
+    }
+  },
+  "carriersExecution": {
+    "date": "2025-12-17",
+    "placeOrAirportCityCode": "BOGOTA",
+    "authorisationSignature": "AVTOPF"
+  },
+  "senderReference": {
+    "fileReference": "98765432",
+    "participantIdentifier": {
+      "identifier": "AGT",
+      "code": "AVTOPF",
+      "airportCityCode": "BOG"
+    }
+  },
+  "chargeDeclarations": {
+    "isoCurrencyCode": "USD",
+    "chargeCode": "ALL_CHARGES_COLLECT",
+    "payment_WeightValuation": "Collect",
+    "payment_OtherCharges": "Collect"
+  },
+  "chargeItems": [
+    {
+      "numberOfPieces": "75",
+      "commodityItemNumber": ["0609"],
+      "grossWeight": {
+        "amount": "1275.0",
+        "unit": "KILOGRAM"
+      },
+      "goodsDescription": "CONSOLIDATE FLOWERS",
+      "consolidation": "true",
+      "packaging": [
+        {
+          "numberOfPieces": "75",
+          "weight": {
+            "amount": "1275.0",
+            "unit": "KILOGRAM"
+          },
+          "volume": {
+            "amount": "7.5",
+            "unit": "CUBIC_METRE"
+          }
+        }
+      ],
+      "charges": [
+        {
+          "chargeableWeight": {
+            "amount": "1350",
+            "unit": "KILOGRAM"
+          },
+          "rateClassCode": "QUANTITY_RATE",
+          "rateOrCharge": "1.10",
+          "totalChargeAmount": "1485.00"
+        }
+      ]
+    }
+  ],
+  "agent": {
+    "name": "AVTOPF CARGO SAS",
+    "place": "BOGOTA",
+    "iataCargoAgentNumericCode": "1234567",
+    "iataCargoAgentCASSAddress": "0016"
+  },
+  "collectChargeSummary": {
+    "totalWeightCharge": "1485.00",
+    "chargeSummaryTotal": "1485.00"
+  },
+  "specialHandlingCodes": ["EAP", "PER"],
+  "shippersCertification": "AVTOPF",
+  "oci": [
+    {
+      "isoCountryCode": "US",
+      "informationIdentifier": "ISS",
+      "controlInformation": "SECURITY_STATUS",
+      "additionalControlInformation": "SPX",
+      "supplementaryControlInformation": "RA-CO-01234-567"
+    },
+    {
+      "isoCountryCode": "CO",
+      "informationIdentifier": "AGT",
+      "controlInformation": "REGULATED_AGENT",
+      "supplementaryControlInformation": "RA-CO-01234-567"
+    }
+  ]
+}

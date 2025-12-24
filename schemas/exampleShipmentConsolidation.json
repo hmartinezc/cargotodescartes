@@ -1,0 +1,113 @@
+{
+  "awbNumber": "145-98765432",
+  "origin": "BOG",
+  "destination": "MIA",
+  "pieces": 50,
+  "weight": 850.0,
+  "weightUnit": "KILOGRAM",
+  "volume": 5.0,
+  "volumeUnit": "CUBIC_METRE",
+  "description": "CONSOLIDATE FLOWERS",
+  "commodityCode": "0609",
+  "currency": "USD",
+  "paymentMethod": "Collect",
+  "executionDate": "2025-12-17",
+  "executionPlace": "BOGOTA",
+  "signature": "AVTOPF",
+
+  "shipper": {
+    "name": "CONSOLIDADORA FLORES CO",
+    "address": {
+      "street": "CRA 7 NO 140-20",
+      "place": "BOGOTA",
+      "countryCode": "CO",
+      "postalCode": "110121"
+    }
+  },
+
+  "consignee": {
+    "name": "USA FLOWER DISTRIBUTORS",
+    "address": {
+      "street": "8000 NW 36TH STREET",
+      "place": "DORAL",
+      "state": "FL",
+      "countryCode": "US",
+      "postalCode": "33166"
+    }
+  },
+
+  "agent": {
+    "name": "AVTOPF CARGO SAS",
+    "iataCode": "1234567",
+    "cassCode": "0016",
+    "place": "BOGOTA"
+  },
+
+  "routing": {
+    "senderAddress": "REUFFW90AVTOPF/BOG01",
+    "recipientAddress": "USCAIR01LUXXSXS"
+  },
+
+  "flights": [
+    {
+      "flightNumber": "LA4567",
+      "date": "2025-12-18",
+      "origin": "BOG",
+      "destination": "MIA"
+    }
+  ],
+
+  "rates": [
+    {
+      "pieces": 50,
+      "weight": 850.0,
+      "chargeableWeight": 900,
+      "rateClassCode": "Q",
+      "rateOrCharge": 1.10,
+      "total": 990.00,
+      "description": "CONSOLIDATE FLOWERS"
+    }
+  ],
+
+  "otherCharges": [],
+  "dimensions": [],
+
+  "oci": [
+    {
+      "countryCode": "US",
+      "infoIdentifier": "ISS",
+      "controlInfo": "REGULATED_AGENT",
+      "supplementaryControlInfo": "01234-567"
+    }
+  ],
+
+  "specialHandlingCodes": ["PER"],
+
+  "hasHouses": true,
+  "houseBills": [
+    {
+      "hawbNumber": "HAWB2025001",
+      "shipperName": "FINCA LAS ROSAS",
+      "consigneeName": "BLOOM MIAMI LLC",
+      "pieces": 20,
+      "weight": 340.0,
+      "natureOfGoods": "ROSES RED"
+    },
+    {
+      "hawbNumber": "HAWB2025002",
+      "shipperName": "FLORES DEL CAMPO",
+      "consigneeName": "SUNNY FLOWERS INC",
+      "pieces": 15,
+      "weight": 255.0,
+      "natureOfGoods": "CARNATIONS"
+    },
+    {
+      "hawbNumber": "HAWB2025003",
+      "shipperName": "ORQUIDEAS COLOMBIA",
+      "consigneeName": "ORCHID WORLD USA",
+      "pieces": 15,
+      "weight": 255.0,
+      "natureOfGoods": "ORCHIDS"
+    }
+  ]
+}

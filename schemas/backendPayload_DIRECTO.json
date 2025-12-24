@@ -1,0 +1,139 @@
+{
+  "_comentario": "=== EJEMPLO DE PAYLOAD PARA ENVÍO DIRECTO (SIN HOUSES) ===",
+  "_descripcion": "Este JSON representa lo que el backend debe enviar cuando la guía es DIRECTA (sin house waybills)",
+  "_generaMensajes": "Solo genera 1 mensaje: AWB (Air Waybill)",
+  
+  "id": "shipment-direct-001",
+  "messageId": "550e8400-e29b-41d4-a716-446655440001",
+  "status": "DRAFT",
+  
+  "awbNumber": "145-12345678",
+  "origin": "BOG",
+  "destination": "MIA",
+  
+  "pieces": 25,
+  "weight": 425.0,
+  "weightUnit": "KILOGRAM",
+  "volume": 2.5,
+  "volumeUnit": "CUBIC_METRE",
+  
+  "description": "FRESH CUT FLOWERS",
+  "commodityCode": "0603",
+  "currency": "USD",
+  "paymentMethod": "Collect",
+  
+  "executionDate": "2025-12-20",
+  "executionPlace": "BOGOTA",
+  "signature": "AVTOPF",
+
+  "shipper": {
+    "name": "FLORES COLOMBIANAS SAS",
+    "name2": "EXPORTADOR DE FLORES",
+    "accountNumber": "SHP123456",
+    "taxId": "900123456-1",
+    "address": {
+      "street": "CARRERA 7 NO 140-20",
+      "street2": "PISO 3 OFICINA 301",
+      "place": "BOGOTA",
+      "state": "DC",
+      "countryCode": "CO",
+      "postalCode": "110121"
+    },
+    "contact": {
+      "identifier": "TE",
+      "number": "573001234567"
+    }
+  },
+
+  "consignee": {
+    "name": "MIAMI FLOWER IMPORTS LLC",
+    "name2": "WHOLESALE DIVISION",
+    "accountNumber": "CNE789012",
+    "taxId": "12-3456789",
+    "address": {
+      "street": "8000 NW 36TH STREET",
+      "street2": "SUITE 200",
+      "place": "DORAL",
+      "state": "FL",
+      "countryCode": "US",
+      "postalCode": "33166"
+    },
+    "contact": {
+      "identifier": "TE",
+      "number": "13055551234"
+    }
+  },
+
+  "agent": {
+    "name": "AVTOPF CARGO SAS",
+    "iataCode": "1234567",
+    "cassCode": "0016",
+    "place": "BOGOTA",
+    "accountNumber": "AGT001234"
+  },
+
+  "routing": {
+    "senderAddress": "REUFFW90AVTOPF/BOG01",
+    "recipientAddress": "USCAIR01LUXXSXS"
+  },
+
+  "flights": [
+    {
+      "flightNumber": "LA4567",
+      "date": "2025-12-21",
+      "time": "08:30:00",
+      "origin": "BOG",
+      "destination": "MIA"
+    }
+  ],
+
+  "rates": [
+    {
+      "pieces": 25,
+      "weight": 425.0,
+      "chargeableWeight": 450,
+      "rateClassCode": "Q",
+      "rateOrCharge": 1.10,
+      "total": 495.00,
+      "description": "CUT FLOWERS",
+      "commodityCode": "0603",
+      "hsCode": "0603110000"
+    }
+  ],
+
+  "otherCharges": [
+    {
+      "code": "AW",
+      "entitlement": "DueCarrier",
+      "amount": 25.00,
+      "paymentMethod": "Collect"
+    },
+    {
+      "code": "FC",
+      "entitlement": "DueAgent",
+      "amount": 15.00,
+      "paymentMethod": "Collect"
+    }
+  ],
+
+  "oci": [
+    {
+      "countryCode": "CO",
+      "infoIdentifier": "AGT",
+      "controlInfo": "REGULATED_AGENT",
+      "supplementaryControlInfo": "RA-CO-01234-567"
+    },
+    {
+      "countryCode": "US",
+      "infoIdentifier": "ISS",
+      "controlInfo": "SECURITY_STATUS",
+      "additionalControlInfo": "SPX",
+      "supplementaryControlInfo": "RA-CO-01234-567"
+    }
+  ],
+
+  "specialHandlingCodes": ["EAP", "PER"],
+
+  "hasHouses": false,
+  "houseBills": []
+}

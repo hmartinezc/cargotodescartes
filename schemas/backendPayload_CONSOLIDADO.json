@@ -1,0 +1,266 @@
+{
+  "_comentario": "=== EJEMPLO DE PAYLOAD PARA ENVÍO CONSOLIDADO (CON HOUSES) ===",
+  "_descripcion": "Este JSON representa lo que el backend debe enviar cuando la guía es CONSOLIDADA (con house waybills)",
+  "_generaMensajes": "Genera 3+ mensajes: 1x AWB (Master) + 1x CSL (Consolidation List) + Nx FHL (uno por cada house)",
+  
+  "id": "shipment-consolidated-001",
+  "messageId": "550e8400-e29b-41d4-a716-446655440002",
+  "status": "DRAFT",
+  
+  "awbNumber": "145-98765432",
+  "origin": "BOG",
+  "destination": "MIA",
+  
+  "pieces": 75,
+  "weight": 1275.0,
+  "weightUnit": "KILOGRAM",
+  "volume": 7.5,
+  "volumeUnit": "CUBIC_METRE",
+  
+  "description": "CONSOLIDATE FLOWERS",
+  "commodityCode": "0609",
+  "currency": "USD",
+  "paymentMethod": "Prepaid",
+  
+  "executionDate": "2025-12-20",
+  "executionPlace": "BOGOTA",
+  "signature": "AVTOPF",
+
+  "shipper": {
+    "name": "CONSOLIDADORA FLORES COLOMBIA SAS",
+    "name2": "AGENTE CONSOLIDADOR",
+    "accountNumber": "CON123456",
+    "taxId": "901234567-1",
+    "address": {
+      "street": "CRA 7 NO 140-20 PISO 3",
+      "street2": "ZONA FRANCA BOGOTA",
+      "place": "BOGOTA",
+      "state": "DC",
+      "countryCode": "CO",
+      "postalCode": "110121"
+    },
+    "contact": {
+      "identifier": "TE",
+      "number": "573109876543"
+    }
+  },
+
+  "consignee": {
+    "name": "USA FLOWER DISTRIBUTORS LLC",
+    "name2": "DECONSOLIDATION CENTER",
+    "accountNumber": "DEC789012",
+    "taxId": "98-7654321",
+    "address": {
+      "street": "8000 NW 36TH STREET SUITE 200",
+      "street2": "CARGO BUILDING A",
+      "place": "DORAL",
+      "state": "FL",
+      "countryCode": "US",
+      "postalCode": "33166"
+    },
+    "contact": {
+      "identifier": "TE",
+      "number": "13055559876"
+    }
+  },
+
+  "agent": {
+    "name": "AVTOPF CARGO SAS",
+    "iataCode": "1234567",
+    "cassCode": "0016",
+    "place": "BOGOTA",
+    "accountNumber": "AGT001234"
+  },
+
+  "routing": {
+    "senderAddress": "REUFFW90AVTOPF/BOG01",
+    "recipientAddress": "USCAIR01LUXXSXS"
+  },
+
+  "flights": [
+    {
+      "flightNumber": "LA4567",
+      "date": "2025-12-21",
+      "time": "08:30:00",
+      "origin": "BOG",
+      "destination": "MIA"
+    }
+  ],
+
+  "rates": [
+    {
+      "pieces": 75,
+      "weight": 1275.0,
+      "chargeableWeight": 1350,
+      "rateClassCode": "Q",
+      "rateOrCharge": 1.10,
+      "total": 1485.00,
+      "description": "CONSOLIDATE FLOWERS",
+      "commodityCode": "0609",
+      "hsCode": "0603110000"
+    }
+  ],
+
+  "otherCharges": [
+    {
+      "code": "AW",
+      "entitlement": "DueCarrier",
+      "amount": 35.00,
+      "paymentMethod": "Prepaid"
+    }
+  ],
+
+  "oci": [
+    {
+      "countryCode": "CO",
+      "infoIdentifier": "AGT",
+      "controlInfo": "REGULATED_AGENT",
+      "supplementaryControlInfo": "RA-CO-01234-567"
+    },
+    {
+      "countryCode": "US",
+      "infoIdentifier": "ISS",
+      "controlInfo": "SECURITY_STATUS",
+      "additionalControlInfo": "SPX",
+      "supplementaryControlInfo": "RA-CO-01234-567"
+    }
+  ],
+
+  "specialHandlingCodes": ["EAP", "PER"],
+
+  "hasHouses": true,
+  "houseBills": [
+    {
+      "id": "house-001",
+      "messageId": "550e8400-e29b-41d4-a716-446655440101",
+      "hawbNumber": "HAWB2025001",
+      "shipperName": "FINCA LAS ROSAS SAS",
+      "consigneeName": "BLOOM MIAMI LLC",
+      "pieces": 25,
+      "weight": 425.0,
+      "natureOfGoods": "ROSES RED",
+      "commonName": "RED ROSES",
+      "htsCodes": ["0603110000"],
+      "shipper": {
+        "name": "FINCA LAS ROSAS SAS",
+        "name2": "PRODUCTOR Y EXPORTADOR",
+        "taxId": "900111222-3",
+        "address": {
+          "street": "VEREDA LA ESPERANZA KM 5",
+          "place": "CHIA",
+          "state": "CU",
+          "countryCode": "CO",
+          "postalCode": "250001"
+        },
+        "contact": {
+          "identifier": "TE",
+          "number": "573201112233"
+        }
+      },
+      "consignee": {
+        "name": "BLOOM MIAMI LLC",
+        "name2": "WHOLESALE ROSES",
+        "taxId": "11-2233445",
+        "address": {
+          "street": "1000 NW 25TH STREET",
+          "place": "MIAMI",
+          "state": "FL",
+          "countryCode": "US",
+          "postalCode": "33127"
+        },
+        "contact": {
+          "identifier": "TE",
+          "number": "13051112233"
+        }
+      }
+    },
+    {
+      "id": "house-002",
+      "messageId": "550e8400-e29b-41d4-a716-446655440102",
+      "hawbNumber": "HAWB2025002",
+      "shipperName": "FLORES DEL CAMPO LTDA",
+      "consigneeName": "SUNNY FLOWERS INC",
+      "pieces": 25,
+      "weight": 425.0,
+      "natureOfGoods": "CARNATIONS",
+      "commonName": "CARNATIONS MIX",
+      "htsCodes": ["0603129000"],
+      "shipper": {
+        "name": "FLORES DEL CAMPO LTDA",
+        "name2": "CULTIVO Y EXPORTACION",
+        "taxId": "800222333-4",
+        "address": {
+          "street": "KM 8 VIA BOGOTA CHIA",
+          "place": "CAJICA",
+          "state": "CU",
+          "countryCode": "CO",
+          "postalCode": "250240"
+        },
+        "contact": {
+          "identifier": "TE",
+          "number": "573102223344"
+        }
+      },
+      "consignee": {
+        "name": "SUNNY FLOWERS INC",
+        "name2": "CARNATION SPECIALISTS",
+        "taxId": "22-3344556",
+        "address": {
+          "street": "2500 NW 79TH AVE",
+          "place": "DORAL",
+          "state": "FL",
+          "countryCode": "US",
+          "postalCode": "33122"
+        },
+        "contact": {
+          "identifier": "TE",
+          "number": "13052223344"
+        }
+      }
+    },
+    {
+      "id": "house-003",
+      "messageId": "550e8400-e29b-41d4-a716-446655440103",
+      "hawbNumber": "HAWB2025003",
+      "shipperName": "ORQUIDEAS COLOMBIA SAS",
+      "consigneeName": "ORCHID WORLD USA",
+      "pieces": 25,
+      "weight": 425.0,
+      "natureOfGoods": "ORCHIDS",
+      "commonName": "ORCHIDS PREMIUM",
+      "htsCodes": ["0602909100"],
+      "shipper": {
+        "name": "ORQUIDEAS COLOMBIA SAS",
+        "name2": "EXOTIC FLOWERS EXPORT",
+        "taxId": "900333444-5",
+        "address": {
+          "street": "FINCA EL PARAISO VDA CENTRO",
+          "place": "FUSAGASUGA",
+          "state": "CU",
+          "countryCode": "CO",
+          "postalCode": "252211"
+        },
+        "contact": {
+          "identifier": "TE",
+          "number": "573103334455"
+        }
+      },
+      "consignee": {
+        "name": "ORCHID WORLD USA",
+        "name2": "EXOTIC FLOWERS IMPORT",
+        "taxId": "33-4455667",
+        "address": {
+          "street": "3200 NW 67TH AVE",
+          "place": "MIAMI",
+          "state": "FL",
+          "countryCode": "US",
+          "postalCode": "33122"
+        },
+        "contact": {
+          "identifier": "TE",
+          "number": "13053334455"
+        }
+      }
+    }
+  ]
+}

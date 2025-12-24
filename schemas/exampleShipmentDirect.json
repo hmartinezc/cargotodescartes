@@ -1,0 +1,123 @@
+{
+  "awbNumber": "145-12345678",
+  "origin": "BOG",
+  "destination": "MIA",
+  "pieces": 25,
+  "weight": 450.5,
+  "weightUnit": "KILOGRAM",
+  "volume": 2.5,
+  "volumeUnit": "CUBIC_METRE",
+  "description": "CUT FLOWERS",
+  "commodityCode": "0603",
+  "currency": "USD",
+  "paymentMethod": "Prepaid",
+  "executionDate": "2025-12-17",
+  "executionPlace": "BOGOTA",
+  "signature": "AVTOPF",
+
+  "shipper": {
+    "name": "FLORES DE COLOMBIA SAS",
+    "name2": "DIVISION EXPORTACIONES",
+    "accountNumber": "SHP001",
+    "address": {
+      "street": "CALLE 100 NO 15-20",
+      "street2": "ZONA FRANCA BOGOTA",
+      "place": "BOGOTA",
+      "state": "CU",
+      "countryCode": "CO",
+      "postalCode": "110111"
+    },
+    "contact": {
+      "identifier": "TE",
+      "number": "5716012345"
+    }
+  },
+
+  "consignee": {
+    "name": "MIAMI FLOWERS INC",
+    "accountNumber": "CNE001",
+    "address": {
+      "street": "7600 NW 25TH STREET",
+      "street2": "SUITE 100",
+      "place": "MIAMI",
+      "state": "FL",
+      "countryCode": "US",
+      "postalCode": "33122"
+    },
+    "contact": {
+      "identifier": "TE",
+      "number": "3057771234"
+    }
+  },
+
+  "agent": {
+    "name": "AVTOPF CARGO SAS",
+    "iataCode": "1234567",
+    "cassCode": "0016",
+    "place": "BOGOTA",
+    "accountNumber": "AGT001"
+  },
+
+  "routing": {
+    "senderAddress": "REUFFW90AVTOPF/BOG01",
+    "recipientAddress": "USCAIR01LUXXSXS"
+  },
+
+  "flights": [
+    {
+      "flightNumber": "LA4567",
+      "date": "2025-12-18",
+      "time": "08:30:00",
+      "origin": "BOG",
+      "destination": "MIA"
+    }
+  ],
+
+  "rates": [
+    {
+      "pieces": 25,
+      "weight": 450.5,
+      "chargeableWeight": 500,
+      "rateClassCode": "Q",
+      "rateOrCharge": 1.25,
+      "total": 625.00,
+      "description": "CUT FLOWERS",
+      "commodityCode": "0603",
+      "hsCode": "0603110000"
+    }
+  ],
+
+  "otherCharges": [
+    {
+      "code": "MY",
+      "entitlement": "DueAgent",
+      "amount": 25.00,
+      "paymentMethod": "Prepaid"
+    }
+  ],
+
+  "dimensions": [
+    {
+      "length": 100,
+      "width": 40,
+      "height": 20,
+      "pieces": 25,
+      "unit": "CENTIMETRE"
+    }
+  ],
+
+  "oci": [
+    {
+      "countryCode": "US",
+      "infoIdentifier": "ISS",
+      "controlInfo": "RA",
+      "additionalControlInfo": "RA",
+      "supplementaryControlInfo": "01234-567"
+    }
+  ],
+
+  "specialHandlingCodes": ["PER", "EAP"],
+
+  "hasHouses": false,
+  "houseBills": []
+}

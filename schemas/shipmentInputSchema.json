@@ -1,0 +1,389 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ShipmentInput",
+  "description": "Estructura de datos que el backend debe enviar al módulo Traxon Connector",
+  "type": "object",
+  "required": [
+    "awbNumber",
+    "origin",
+    "destination",
+    "pieces",
+    "weight",
+    "shipper",
+    "consignee",
+    "agent",
+    "routing",
+    "rates"
+  ],
+  "properties": {
+    "messageId": {
+      "type": "string",
+      "description": "UUID/GUID único para tracking de la transmisión. Si no se envía, el módulo genera uno automáticamente. IMPORTANTE: Guardar este ID en tu base de datos para auditoría y correlación de respuestas.",
+      "format": "uuid",
+      "example": "550e8400-e29b-41d4-a716-446655440000"
+    },
+    "awbNumber": {
+      "type": "string",
+      "description": "Número de guía aérea formato XXX-XXXXXXXX",
+      "pattern": "^[0-9]{3}-[0-9]{8}$",
+      "example": "145-12345678"
+    },
+    "origin": {
+      "type": "string",
+      "description": "Código IATA aeropuerto origen (3 letras)",
+      "pattern": "^[A-Z]{3}$",
+      "example": "BOG"
+    },
+    "destination": {
+      "type": "string",
+      "description": "Código IATA aeropuerto destino (3 letras)",
+      "pattern": "^[A-Z]{3}$",
+      "example": "MIA"
+    },
+    "pieces": {
+      "type": "integer",
+      "description": "Número total de piezas",
+      "minimum": 1,
+      "example": 25
+    },
+    "weight": {
+      "type": "number",
+      "description": "Peso total en la unidad especificada",
+      "minimum": 0.1,
+      "example": 450.5
+    },
+    "weightUnit": {
+      "type": "string",
+      "enum": ["KILOGRAM", "POUND"],
+      "default": "KILOGRAM",
+      "example": "KILOGRAM"
+    },
+    "volume": {
+      "type": "number",
+      "description": "Volumen total (opcional)",
+      "example": 2.5
+    },
+    "volumeUnit": {
+      "type": "string",
+      "enum": ["CUBIC_METRE", "CUBIC_CENTIMETRE"],
+      "default": "CUBIC_METRE",
+      "example": "CUBIC_METRE"
+    },
+    "description": {
+      "type": "string",
+      "description": "Descripción general de la mercancía",
+      "maxLength": 20,
+      "example": "CUT FLOWERS"
+    },
+    "commodityCode": {
+      "type": "string",
+      "description": "Código de mercancía (ej: 0603 para flores)",
+      "example": "0603"
+    },
+    "currency": {
+      "type": "string",
+      "description": "Código ISO moneda",
+      "pattern": "^[A-Z]{3}$",
+      "default": "USD",
+      "example": "USD"
+    },
+    "paymentMethod": {
+      "type": "string",
+      "enum": ["Prepaid", "Collect"],
+      "default": "Prepaid",
+      "example": "Prepaid"
+    },
+    "executionDate": {
+      "type": "string",
+      "format": "date",
+      "description": "Fecha de ejecución YYYY-MM-DD",
+      "example": "2025-12-17"
+    },
+    "executionPlace": {
+      "type": "string",
+      "description": "Lugar de ejecución (ciudad o código)",
+      "example": "BOGOTA"
+    },
+    "signature": {
+      "type": "string",
+      "description": "Firma/nombre del agente",
+      "maxLength": 20,
+      "example": "AVTOPF"
+    },
+
+    "shipper": {
+      "type": "object",
+      "description": "Datos del remitente/exportador",
+      "required": ["name", "address"],
+      "properties": {
+        "name": { "type": "string", "maxLength": 35, "example": "FLORES DE COLOMBIA SAS" },
+        "name2": { "type": "string", "maxLength": 35, "example": "DIVISION EXPORTACIONES" },
+        "accountNumber": { "type": "string", "example": "SHP001" },
+        "address": {
+          "type": "object",
+          "required": ["street", "place", "countryCode", "postalCode"],
+          "properties": {
+            "street": { "type": "string", "maxLength": 35, "example": "CALLE 100 NO 15-20" },
+            "street2": { "type": "string", "maxLength": 35, "example": "ZONA FRANCA BOGOTA" },
+            "place": { "type": "string", "maxLength": 17, "example": "BOGOTA" },
+            "state": { "type": "string", "maxLength": 2, "example": "CU" },
+            "countryCode": { "type": "string", "pattern": "^[A-Z]{2}$", "example": "CO" },
+            "postalCode": { "type": "string", "maxLength": 9, "example": "110111" }
+          }
+        },
+        "contact": {
+          "type": "object",
+          "properties": {
+            "identifier": { "type": "string", "default": "TE", "example": "TE" },
+            "number": { "type": "string", "maxLength": 25, "example": "5716012345" }
+          }
+        }
+      }
+    },
+
+    "consignee": {
+      "type": "object",
+      "description": "Datos del destinatario/importador",
+      "required": ["name", "address"],
+      "properties": {
+        "name": { "type": "string", "maxLength": 35, "example": "MIAMI FLOWERS INC" },
+        "name2": { "type": "string", "maxLength": 35 },
+        "accountNumber": { "type": "string", "example": "CNE001" },
+        "address": {
+          "type": "object",
+          "required": ["street", "place", "countryCode", "postalCode"],
+          "properties": {
+            "street": { "type": "string", "maxLength": 35, "example": "7600 NW 25TH STREET" },
+            "street2": { "type": "string", "maxLength": 35, "example": "SUITE 100" },
+            "place": { "type": "string", "maxLength": 17, "example": "MIAMI" },
+            "state": { "type": "string", "maxLength": 2, "example": "FL" },
+            "countryCode": { "type": "string", "pattern": "^[A-Z]{2}$", "example": "US" },
+            "postalCode": { "type": "string", "maxLength": 9, "example": "33122" }
+          }
+        },
+        "contact": {
+          "type": "object",
+          "properties": {
+            "identifier": { "type": "string", "default": "TE" },
+            "number": { "type": "string", "maxLength": 25, "example": "3057771234" }
+          }
+        }
+      }
+    },
+
+    "agent": {
+      "type": "object",
+      "description": "Datos del agente de carga",
+      "required": ["name", "iataCode", "place"],
+      "properties": {
+        "name": { "type": "string", "maxLength": 35, "example": "AVTOPF CARGO SAS" },
+        "iataCode": { "type": "string", "description": "Código IATA 7 dígitos", "example": "1234567" },
+        "cassCode": { "type": "string", "description": "Código CASS 4 dígitos", "example": "0016" },
+        "place": { "type": "string", "maxLength": 17, "example": "BOGOTA" },
+        "accountNumber": { "type": "string", "example": "AGT001" }
+      }
+    },
+
+    "routing": {
+      "type": "object",
+      "description": "Información de enrutamiento/direccionamiento Traxon",
+      "required": ["senderAddress", "recipientAddress"],
+      "properties": {
+        "senderAddress": {
+          "type": "string",
+          "description": "Dirección PIMA del remitente (tu empresa)",
+          "example": "REUFFW90AVTOPF/BOG01"
+        },
+        "recipientAddress": {
+          "type": "string",
+          "description": "Dirección PIMA del destinatario (aerolínea)",
+          "example": "USCAIR01LUXXSXS"
+        }
+      }
+    },
+
+    "flights": {
+      "type": "array",
+      "description": "Lista de vuelos (opcional)",
+      "items": {
+        "type": "object",
+        "required": ["flightNumber", "date", "origin", "destination"],
+        "properties": {
+          "flightNumber": { "type": "string", "example": "LA4567" },
+          "date": { "type": "string", "format": "date", "example": "2025-12-18" },
+          "time": { "type": "string", "pattern": "^[0-9]{2}:[0-9]{2}:[0-9]{2}$", "example": "08:30:00" },
+          "origin": { "type": "string", "pattern": "^[A-Z]{3}$", "example": "BOG" },
+          "destination": { "type": "string", "pattern": "^[A-Z]{3}$", "example": "MIA" }
+        }
+      }
+    },
+
+    "rates": {
+      "type": "array",
+      "description": "Líneas de tarifa/cargos",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["pieces", "weight", "rateOrCharge", "total", "description"],
+        "properties": {
+          "pieces": { "type": "integer", "example": 25 },
+          "weight": { "type": "number", "example": 450.5 },
+          "chargeableWeight": { "type": "number", "example": 500 },
+          "rateClassCode": { 
+            "type": "string", 
+            "enum": ["Q", "M", "N", "B", "C", "QUANTITY_RATE", "MINIMUM_CHARGE", "NORMAL_RATE", "BASIC_CHARGE"],
+            "default": "Q",
+            "example": "Q" 
+          },
+          "rateOrCharge": { "type": "number", "example": 1.25 },
+          "total": { "type": "number", "example": 625.00 },
+          "description": { "type": "string", "maxLength": 20, "example": "CUT FLOWERS" },
+          "commodityCode": { "type": "string", "example": "0603" },
+          "hsCode": { "type": "string", "example": "0603110000" }
+        }
+      }
+    },
+
+    "otherCharges": {
+      "type": "array",
+      "description": "Otros cargos (opcional)",
+      "items": {
+        "type": "object",
+        "required": ["code", "entitlement", "amount", "paymentMethod"],
+        "properties": {
+          "code": { 
+            "type": "string", 
+            "description": "Código de cargo (ej: MY=Agency Fee, FC=Charges Collect Fee)",
+            "example": "MY" 
+          },
+          "entitlement": { 
+            "type": "string", 
+            "enum": ["DueCarrier", "DueAgent"],
+            "example": "DueAgent" 
+          },
+          "amount": { "type": "number", "example": 25.00 },
+          "paymentMethod": { 
+            "type": "string", 
+            "enum": ["Prepaid", "Collect"],
+            "example": "Prepaid" 
+          }
+        }
+      }
+    },
+
+    "dimensions": {
+      "type": "array",
+      "description": "Dimensiones de las piezas (opcional)",
+      "items": {
+        "type": "object",
+        "required": ["length", "width", "height", "pieces", "unit"],
+        "properties": {
+          "length": { "type": "integer", "example": 100 },
+          "width": { "type": "integer", "example": 40 },
+          "height": { "type": "integer", "example": 20 },
+          "pieces": { "type": "integer", "example": 25 },
+          "unit": { 
+            "type": "string", 
+            "enum": ["CENTIMETRE", "INCH"],
+            "default": "CENTIMETRE",
+            "example": "CENTIMETRE" 
+          }
+        }
+      }
+    },
+
+    "oci": {
+      "type": "array",
+      "description": "Información de seguridad OCI (OPCIONAL). Por defecto solo se envía el NIT/TIN del shipper con formato AGT/T/NIT. Para campos adicionales de seguridad (RA, SPX, etc), configurarlos en el panel de configuración.",
+      "items": {
+        "type": "object",
+        "required": ["countryCode", "controlInfo"],
+        "properties": {
+          "countryCode": { "type": "string", "pattern": "^[A-Z]{2}$", "example": "CO" },
+          "infoIdentifier": { 
+            "type": "string", 
+            "enum": ["ISS", "IMP", "EXP", "SHP", "CNE", "AGT", "ACC", "TRA"],
+            "description": "ISS=Issuer, AGT=Agent, SHP=Shipper, CNE=Consignee",
+            "example": "AGT" 
+          },
+          "controlInfo": { 
+            "type": "string", 
+            "description": "Abreviación: RA (Regulated Agent), KC (Known Consignor), SPX (Secure Examined), SM (Screening Method), TIN (Tax ID), SS (Security Status)",
+            "example": "RA" 
+          },
+          "additionalControlInfo": { "type": "string", "description": "Info adicional (ej: NIT para TIN)", "example": "901234567" },
+          "supplementaryControlInfo": { "type": "string", "example": "" }
+        }
+      },
+      "default": []
+    },
+
+    "specialHandlingCodes": {
+      "type": "array",
+      "description": "Códigos de manejo especial (OPCIONAL). Si no se envía, se aplican defaults por aerolínea: IBERIA=['ECC','EAP','PER'], otras=['EAP']",
+      "items": {
+        "type": "string",
+        "enum": ["EAP", "ECC", "SPX", "PER", "PEP", "PEF", "PES", "RFL", "COL", "FRO", "PIL", "VAL", "VUN", "SPF", "AVI", "DGR", "HEA", "BIG"],
+        "example": "EAP"
+      },
+      "default": ["EAP"]
+    },
+
+    "hasHouses": {
+      "type": "boolean",
+      "description": "Indica si es consolidación con houses",
+      "default": false,
+      "example": true
+    },
+
+    "houseBills": {
+      "type": "array",
+      "description": "Lista de house waybills (solo si hasHouses=true)",
+      "items": {
+        "type": "object",
+        "required": ["hawbNumber", "shipperName", "consigneeName", "pieces", "weight", "natureOfGoods"],
+        "properties": {
+          "messageId": { 
+            "type": "string", 
+            "format": "uuid",
+            "description": "UUID/GUID único para tracking del FHL. Si no se envía, se genera automáticamente.",
+            "example": "660e8400-e29b-41d4-a716-446655440001" 
+          },
+          "hawbNumber": { "type": "string", "example": "HAWB001" },
+          "pieces": { "type": "integer", "example": 10 },
+          "weight": { "type": "number", "example": 150.5 },
+          "natureOfGoods": { "type": "string", "maxLength": 20, "example": "ROSES" },
+          "commonName": { "type": "string", "description": "Nombre común (requerido para KLM)", "example": "FRESH ROSES" },
+          "slac": { "type": "integer", "description": "Shipper's Load and Count", "example": 10 },
+          "harmonizedCode": { "type": "string", "description": "Código HS arancelario", "example": "0603110000" },
+          "shipperName": { "type": "string", "maxLength": 35, "example": "FINCA LA ROSA SAS" },
+          "shipperAddress": {
+            "type": "object",
+            "description": "Dirección del shipper del house (opcional)",
+            "properties": {
+              "street": { "type": "string", "maxLength": 35, "example": "VEREDA EL ROSAL KM5" },
+              "street2": { "type": "string", "maxLength": 35 },
+              "place": { "type": "string", "maxLength": 17, "example": "CHIA" },
+              "state": { "type": "string", "maxLength": 2 },
+              "countryCode": { "type": "string", "pattern": "^[A-Z]{2}$", "example": "CO" },
+              "postalCode": { "type": "string", "maxLength": 9, "example": "250001" }
+            }
+          },
+          "consigneeName": { "type": "string", "maxLength": 35, "example": "BLOOM FLOWERS MIAMI" },
+          "consigneeAddress": {
+            "type": "object",
+            "description": "Dirección del consignee del house (opcional)",
+            "properties": {
+              "street": { "type": "string", "maxLength": 35, "example": "8000 NW 15TH AVE" },
+              "street2": { "type": "string", "maxLength": 35 },
+              "place": { "type": "string", "maxLength": 17, "example": "MIAMI" },
+              "state": { "type": "string", "maxLength": 2, "example": "FL" },
+              "countryCode": { "type": "string", "pattern": "^[A-Z]{2}$", "example": "US" },
+              "postalCode": { "type": "string", "maxLength": 9, "example": "33126" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

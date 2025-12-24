@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Traxon Connector - Demo Integración</title>
+    <style>
+        /* Estilos del sitio host (no afectarán al Web Component) */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        .demo-panel {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            margin-bottom: 20px;
+        }
+        .awb-list {
+            display: grid;
+            gap: 12px;
+        }
+        .awb-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            transition: all 0.2s;
+        }
+        .awb-item:hover {
+            background: #f1f5f9;
+            border-color: #3b82f6;
+        }
+        .awb-number {
+            font-family: monospace;
+            font-size: 18px;
+            font-weight: bold;
+            color: #1e293b;
+        }
+        .awb-details {
+            display: flex;
+            gap: 24px;
+            color: #64748b;
+            font-size: 14px;
+        }
+        .btn-open {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+        .btn-open:hover {
+            background: #2563eb;
+        }
+        .btn-demo {
+            background: #10b981;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 16px;
+            margin-top: 16px;
+        }
+        .btn-demo:hover {
+            background: #059669;
+        }
+        .code-block {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 16px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 13px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            margin-top: 16px;
+        }
+        .section-title {
+            color: #1e293b;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .badge-draft { background: #dbeafe; color: #1d4ed8; }
+        .badge-direct { background: #f1f5f9; color: #475569; }
+        .badge-consol { background: #fef3c7; color: #b45309; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🛫 Traxon Connector - Demo de Integración</h1>
+        
+        <div class="demo-panel">
+            <h2 class="section-title">📋 Lista de AWBs (Simulación Razor Page)</h2>
+            <p style="color: #64748b; margin-bottom: 16px;">
+                Haz clic en "Abrir" para cargar el AWB en el conector Traxon.
+            </p>
+            
+            <div class="awb-list">
+                <!-- AWB 1: Consolidado -->
+                <div class="awb-item">
+                    <div>
+                        <span class="awb-number">145-11223344</span>
+                        <span class="badge badge-consol" style="margin-left: 12px;">Consolidado</span>
+                        <span class="badge badge-draft" style="margin-left: 8px;">Draft</span>
+                        <div class="awb-details" style="margin-top: 8px;">
+                            <span>📍 BOG → MIA</span>
+                            <span>📦 75 piezas</span>
+                            <span>⚖️ 1,275 kg</span>
+                            <span>🏠 3 Houses</span>
+                        </div>
+                    </div>
+                    <button class="btn-open" onclick="openAwb1()">Abrir</button>
+                </div>
+                
+                <!-- AWB 2: Directo -->
+                <div class="awb-item">
+                    <div>
+                        <span class="awb-number">145-55667788</span>
+                        <span class="badge badge-direct" style="margin-left: 12px;">Directo</span>
+                        <span class="badge badge-draft" style="margin-left: 8px;">Draft</span>
+                        <div class="awb-details" style="margin-top: 8px;">
+                            <span>📍 BOG → MIA</span>
+                            <span>📦 25 piezas</span>
+                            <span>⚖️ 425 kg</span>
+                        </div>
+                    </div>
+                    <button class="btn-open" onclick="openAwb2()">Abrir</button>
+                </div>
+                
+                <!-- AWB 3: Personalizado -->
+                <div class="awb-item">
+                    <div>
+                        <span class="awb-number">075-99887766</span>
+                        <span class="badge badge-direct" style="margin-left: 12px;">Directo</span>
+                        <span class="badge badge-draft" style="margin-left: 8px;">IBERIA</span>
+                        <div class="awb-details" style="margin-top: 8px;">
+                            <span>📍 BOG → MAD</span>
+                            <span>📦 30 piezas</span>
+                            <span>⚖️ 500 kg</span>
+                        </div>
+                    </div>
+                    <button class="btn-open" onclick="openAwb3()">Abrir</button>
+                </div>
+            </div>
+            
+            <button class="btn-demo" onclick="openDemo()">🧪 Abrir con Datos de Demo</button>
+            <button class="btn-demo" style="background: #8b5cf6; margin-left: 12px;" onclick="openMultipleAwbs()">📋 Abrir Múltiples AWBs</button>
+        </div>
+        
+        <div class="demo-panel">
+            <h2 class="section-title">🆕 Modo Múltiples AWBs (Lista con Buscador)</h2>
+            <p style="color: #64748b; margin-bottom: 16px;">
+                Cuando tu backend envía más de una AWB, se muestra automáticamente una lista con buscador.<br>
+                Cuando envías solo una AWB, se muestra directamente el modal de detalle.
+            </p>
+            
+            <div class="code-block">// MODO 1: Una sola AWB → Vista de detalle directa
+traxon.openWithShipment({
+    awbNumber: '145-12345678',
+    origin: 'BOG',
+    destination: 'MIA',
+    // ... datos de la guía
+});
+
+// MODO 2: Múltiples AWBs → Lista con buscador
+traxon.openWithShipments([
+    { awbNumber: '145-11223344', origin: 'BOG', destination: 'MIA', pieces: 75, weight: 1275, ... },
+    { awbNumber: '145-55667788', origin: 'BOG', destination: 'MIA', pieces: 25, weight: 425, ... },
+    { awbNumber: '075-99887766', origin: 'BOG', destination: 'MAD', pieces: 30, weight: 500, ... }
+]);
+
+// El conector detecta automáticamente el modo:
+// - 1 AWB = Vista bonita de detalle único
+// - N AWBs = Lista con buscador y filas</div>
+        </div>
+        
+        <div class="demo-panel">
+            <h2 class="section-title">💻 Código de Integración para ASP.NET Razor Pages</h2>
+            
+            <h3 style="color: #475569; font-size: 14px; margin-top: 16px;">1. Incluir el script en _Layout.cshtml:</h3>
+            <div class="code-block">&lt;script src="~/js/traxon-connector.js"&gt;&lt;/script&gt;</div>
+            
+            <h3 style="color: #475569; font-size: 14px; margin-top: 16px;">2. Agregar el Web Component en tu página:</h3>
+            <div class="code-block">&lt;traxon-connector id="traxonModal"&gt;&lt;/traxon-connector&gt;</div>
+            
+            <h3 style="color: #475569; font-size: 14px; margin-top: 16px;">3. Abrir el modal con datos desde JavaScript:</h3>
+            <div class="code-block">// Obtener referencia al componente
+const traxon = document.getElementById('traxonModal');
+
+// ═══════════════════════════════════════════════════════════
+// MODO 1: UNA SOLA AWB → Vista bonita de detalle único
+// ═══════════════════════════════════════════════════════════
+traxon.openWithShipment({
+    awbNumber: '145-12345678',
+    origin: 'BOG',
+    destination: 'MIA',
+    pieces: 25,
+    weight: 450.5,
+    // ... más campos
+});
+
+// ═══════════════════════════════════════════════════════════
+// MODO 2: MÚLTIPLES AWBs → Lista con buscador y filas
+// ═══════════════════════════════════════════════════════════
+traxon.openWithShipments([
+    { awbNumber: '145-11223344', origin: 'BOG', destination: 'MIA', ... },
+    { awbNumber: '145-55667788', origin: 'BOG', destination: 'MIA', ... },
+    { awbNumber: '075-99887766', origin: 'BOG', destination: 'MAD', ... }
+]);
+
+// ═══════════════════════════════════════════════════════════
+// OTROS MÉTODOS
+// ═══════════════════════════════════════════════════════════
+traxon.open();    // Abrir con datos de demo
+traxon.close();   // Cerrar el modal
+
+// Escuchar eventos
+traxon.addEventListener('traxon-opened', (e) => {
+    console.log('Modal abierto', e.detail);
+    // e.detail.mode = 'single' o 'multiple'
+});
+traxon.addEventListener('traxon-closed', () => console.log('Modal cerrado'));</div>
+            
+            <h3 style="color: #475569; font-size: 14px; margin-top: 16px;">4. Configurar API desde JavaScript:</h3>
+            <div class="code-block">// Cambiar endpoint y password programáticamente
+traxon.setConfig({
+    endpoint: 'https://community.champ.aero:8444/avatar-uat/NO_WAIT',
+    password: 'tu-password-aqui'
+});
+
+// Obtener configuración actual
+const config = traxon.getConfig();
+console.log(config);</div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- WEB COMPONENT - Agregar aquí el script compilado -->
+    <!-- ============================================================ -->
+    <traxon-connector id="traxonModal"></traxon-connector>
+    
+    <!-- En producción, usar el archivo compilado: -->
+    <!-- <script src="traxon-connector.js"></script> -->
+    
+    <script>
+        // ============================================================
+        // FUNCIONES DE DEMO
+        // ============================================================
+        
+        const traxon = document.getElementById('traxonModal');
+        
+        // AWB 1: Consolidado con Houses
+        function openAwb1() {
+            traxon.openWithShipment({
+                id: 'awb-consolidado-demo',
+                awbNumber: '145-11223344',
+                origin: 'BOG',
+                destination: 'MIA',
+                pieces: 75,
+                weight: 1275,
+                weightUnit: 'KILOGRAM',
+                volume: 7.5,
+                volumeUnit: 'CUBIC_METRE',
+                description: 'CONSOLIDATE FLOWERS',
+                commodityCode: '0609',
+                currency: 'USD',
+                paymentMethod: 'Collect',
+                executionDate: '2025-12-18',
+                executionPlace: 'BOGOTA',
+                signature: 'AVTOPF',
+                routing: {
+                    senderAddress: 'REUFFW90AVTOPF/BOG01',
+                    recipientAddress: 'USCAIR01LUXXSXS'
+                },
+                shipper: {
+                    name: 'CONSOLIDADORA FLORES COLOMBIA SAS',
+                    address: { 
+                        street: 'CRA 7 NO 140-20 PISO 3', 
+                        place: 'BOGOTA', 
+                        countryCode: 'CO', 
+                        postalCode: '110121' 
+                    }
+                },
+                consignee: {
+                    name: 'USA FLOWER DISTRIBUTORS LLC',
+                    address: { 
+                        street: '8000 NW 36TH STREET SUITE 200', 
+                        place: 'DORAL', 
+                        state: 'FL',
+                        countryCode: 'US', 
+                        postalCode: '33166' 
+                    }
+                },
+                agent: {
+                    name: 'AVTOPF CARGO SAS',
+                    iataCode: '1234567',
+                    cassCode: '0016',
+                    place: 'BOGOTA'
+                },
+                flights: [{ 
+                    flightNumber: 'LA4567', 
+                    date: '2025-12-18', 
+                    origin: 'BOG', 
+                    destination: 'MIA' 
+                }],
+                rates: [{ 
+                    pieces: 75, 
+                    weight: 1275, 
+                    chargeableWeight: 1350,
+                    rateClassCode: 'Q',
+                    rateOrCharge: 1.10, 
+                    total: 1485.00, 
+                    description: 'CONSOLIDATE FLOWERS',
+                    commodityCode: '0609'
+                }],
+                hasHouses: true,
+                houseBills: [
+                    { 
+                        id: 'h1', 
+                        hawbNumber: 'HAWB20251217A', 
+                        pieces: 25, 
+                        weight: 425, 
+                        shipperName: 'FINCA LAS ROSAS SAS', 
+                        consigneeName: 'BLOOM MIAMI LLC', 
+                        natureOfGoods: 'ROSES RED'
+                    },
+                    { 
+                        id: 'h2', 
+                        hawbNumber: 'HAWB20251217B', 
+                        pieces: 25, 
+                        weight: 425, 
+                        shipperName: 'FLORES DEL CAMPO LTDA', 
+                        consigneeName: 'SUNNY FLOWERS INC', 
+                        natureOfGoods: 'CARNATIONS'
+                    },
+                    { 
+                        id: 'h3', 
+                        hawbNumber: 'HAWB20251217C', 
+                        pieces: 25, 
+                        weight: 425, 
+                        shipperName: 'ORQUIDEAS COLOMBIA SAS', 
+                        consigneeName: 'ORCHID WORLD USA', 
+                        natureOfGoods: 'ORCHIDS'
+                    }
+                ]
+            });
+        }
+        
+        // AWB 2: Directo
+        function openAwb2() {
+            traxon.openWithShipment({
+                id: 'awb-directo-demo',
+                awbNumber: '145-55667788',
+                origin: 'BOG',
+                destination: 'MIA',
+                pieces: 25,
+                weight: 425,
+                weightUnit: 'KILOGRAM',
+                volume: 2.5,
+                volumeUnit: 'CUBIC_METRE',
+                description: 'CUT FLOWERS',
+                commodityCode: '0603',
+                currency: 'USD',
+                paymentMethod: 'Collect',
+                executionDate: '2025-12-18',
+                executionPlace: 'BOGOTA',
+                signature: 'AVTOPF',
+                routing: {
+                    senderAddress: 'REUFFW90AVTOPF/BOG01',
+                    recipientAddress: 'USCAIR01LUXXSXS'
+                },
+                shipper: {
+                    name: 'FLORES DIRECTAS DE COLOMBIA SAS',
+                    address: { 
+                        street: 'CRA 7 NO 140-20 PISO 3', 
+                        place: 'BOGOTA', 
+                        countryCode: 'CO', 
+                        postalCode: '110121' 
+                    }
+                },
+                consignee: {
+                    name: 'DIRECT FLOWERS USA INC',
+                    address: { 
+                        street: '8000 NW 36TH STREET SUITE 100', 
+                        place: 'DORAL', 
+                        state: 'FL',
+                        countryCode: 'US', 
+                        postalCode: '33166' 
+                    }
+                },
+                agent: {
+                    name: 'AVTOPF CARGO SAS',
+                    iataCode: '1234567',
+                    cassCode: '0016',
+                    place: 'BOGOTA'
+                },
+                flights: [{ 
+                    flightNumber: 'LA4567', 
+                    date: '2025-12-18', 
+                    origin: 'BOG', 
+                    destination: 'MIA' 
+                }],
+                rates: [{ 
+                    pieces: 25, 
+                    weight: 425, 
+                    chargeableWeight: 450,
+                    rateClassCode: 'Q',
+                    rateOrCharge: 1.10, 
+                    total: 495.00, 
+                    description: 'CUT FLOWERS',
+                    commodityCode: '0603'
+                }],
+                hasHouses: false,
+                houseBills: []
+            });
+        }
+        
+        // AWB 3: Iberia (diferentes SPH codes)
+        function openAwb3() {
+            traxon.openWithShipment({
+                id: 'awb-iberia-demo',
+                awbNumber: '075-99887766',
+                origin: 'BOG',
+                destination: 'MAD',
+                pieces: 30,
+                weight: 500,
+                weightUnit: 'KILOGRAM',
+                description: 'CUT FLOWERS',
+                commodityCode: '0603',
+                currency: 'EUR',
+                paymentMethod: 'Prepaid',
+                executionDate: '2025-12-18',
+                executionPlace: 'BOGOTA',
+                signature: 'AVTOPF',
+                shipper: {
+                    name: 'EXPORTADORA FLORES COLOMBIA',
+                    address: { 
+                        street: 'AV ELDORADO 90-10', 
+                        place: 'BOGOTA', 
+                        countryCode: 'CO', 
+                        postalCode: '110111' 
+                    }
+                },
+                consignee: {
+                    name: 'FLORES MADRID SL',
+                    address: { 
+                        street: 'CALLE GRAN VIA 100', 
+                        place: 'MADRID', 
+                        countryCode: 'ES', 
+                        postalCode: '28001' 
+                    }
+                },
+                agent: {
+                    name: 'AVTOPF CARGO SAS',
+                    iataCode: '1234567',
+                    place: 'BOGOTA'
+                },
+                flights: [{ 
+                    flightNumber: 'IB6524', 
+                    date: '2025-12-18', 
+                    origin: 'BOG', 
+                    destination: 'MAD' 
+                }],
+                rates: [{ 
+                    pieces: 30, 
+                    weight: 500, 
+                    rateClassCode: 'Q',
+                    rateOrCharge: 1.50, 
+                    total: 750.00, 
+                    description: 'CUT FLOWERS'
+                }],
+                hasHouses: false,
+                houseBills: []
+            });
+        }
+        
+        // Abrir con datos de demo
+        function openDemo() {
+            traxon.open();
+        }
+        
+        // NUEVO: Abrir múltiples AWBs (muestra lista con buscador)
+        function openMultipleAwbs() {
+            traxon.openWithShipments([
+                {
+                    id: 'multi-awb-1',
+                    awbNumber: '145-11223344',
+                    origin: 'BOG',
+                    destination: 'MIA',
+                    pieces: 75,
+                    weight: 1275,
+                    description: 'CONSOLIDATE FLOWERS',
+                    shipper: { name: 'CONSOLIDADORA FLORES SAS', address: { street: 'CRA 7 NO 140-20', place: 'BOGOTA', countryCode: 'CO', postalCode: '110121' }},
+                    consignee: { name: 'USA FLOWER DISTRIBUTORS', address: { street: '8000 NW 36TH ST', place: 'DORAL', state: 'FL', countryCode: 'US', postalCode: '33166' }},
+                    agent: { name: 'AVTOPF CARGO SAS', iataCode: '1234567', place: 'BOGOTA' },
+                    routing: { senderAddress: 'REUFFW90AVTOPF/BOG01', recipientAddress: 'USCAIR01LUXXSXS' },
+                    rates: [{ pieces: 75, weight: 1275, rateOrCharge: 1.10, total: 1402.50, description: 'CONSOLIDATE FLOWERS' }],
+                    hasHouses: true,
+                    houseBills: [
+                        { id: 'h1', hawbNumber: 'HAWB001', pieces: 25, weight: 425, shipperName: 'FINCA ROSAS', consigneeName: 'BLOOM MIAMI', natureOfGoods: 'ROSES' },
+                        { id: 'h2', hawbNumber: 'HAWB002', pieces: 25, weight: 425, shipperName: 'FLORES CAMPO', consigneeName: 'SUNNY FLOWERS', natureOfGoods: 'CARNATIONS' },
+                        { id: 'h3', hawbNumber: 'HAWB003', pieces: 25, weight: 425, shipperName: 'ORQUIDEAS CO', consigneeName: 'ORCHID USA', natureOfGoods: 'ORCHIDS' }
+                    ]
+                },
+                {
+                    id: 'multi-awb-2',
+                    awbNumber: '145-55667788',
+                    origin: 'BOG',
+                    destination: 'MIA',
+                    pieces: 25,
+                    weight: 425,
+                    description: 'CUT FLOWERS',
+                    shipper: { name: 'FLORES DIRECTAS SAS', address: { street: 'AV ELDORADO 90-10', place: 'BOGOTA', countryCode: 'CO', postalCode: '110111' }},
+                    consignee: { name: 'DIRECT FLOWERS USA', address: { street: '7600 NW 25TH ST', place: 'MIAMI', state: 'FL', countryCode: 'US', postalCode: '33122' }},
+                    agent: { name: 'AVTOPF CARGO SAS', iataCode: '1234567', place: 'BOGOTA' },
+                    routing: { senderAddress: 'REUFFW90AVTOPF/BOG01', recipientAddress: 'USCAIR01LUXXSXS' },
+                    rates: [{ pieces: 25, weight: 425, rateOrCharge: 1.25, total: 531.25, description: 'CUT FLOWERS' }],
+                    hasHouses: false,
+                    houseBills: []
+                },
+                {
+                    id: 'multi-awb-3',
+                    awbNumber: '075-99887766',
+                    origin: 'BOG',
+                    destination: 'MAD',
+                    pieces: 30,
+                    weight: 500,
+                    description: 'CUT FLOWERS IBERIA',
+                    shipper: { name: 'EXPORTADORA COLOMBIA', address: { street: 'CALLE 100 NO 15-20', place: 'BOGOTA', countryCode: 'CO', postalCode: '110111' }},
+                    consignee: { name: 'FLORES MADRID SL', address: { street: 'GRAN VIA 100', place: 'MADRID', countryCode: 'ES', postalCode: '28001' }},
+                    agent: { name: 'AVTOPF CARGO SAS', iataCode: '1234567', place: 'BOGOTA' },
+                    routing: { senderAddress: 'REUFFW90AVTOPF/BOG01', recipientAddress: 'ESIBE01' },
+                    rates: [{ pieces: 30, weight: 500, rateOrCharge: 1.50, total: 750.00, description: 'CUT FLOWERS IBERIA' }],
+                    hasHouses: false,
+                    houseBills: []
+                },
+                {
+                    id: 'multi-awb-4',
+                    awbNumber: '145-22334455',
+                    origin: 'BOG',
+                    destination: 'JFK',
+                    pieces: 40,
+                    weight: 680,
+                    description: 'MIXED FLOWERS',
+                    shipper: { name: 'FLORICOLA PREMIUM SAS', address: { street: 'VEREDA LA PALMA', place: 'CHIA', countryCode: 'CO', postalCode: '250001' }},
+                    consignee: { name: 'NEW YORK FLOWERS INC', address: { street: '123 FLOWER DISTRICT', place: 'NEW YORK', state: 'NY', countryCode: 'US', postalCode: '10001' }},
+                    agent: { name: 'AVTOPF CARGO SAS', iataCode: '1234567', place: 'BOGOTA' },
+                    routing: { senderAddress: 'REUFFW90AVTOPF/BOG01', recipientAddress: 'USAA01' },
+                    rates: [{ pieces: 40, weight: 680, rateOrCharge: 1.35, total: 918.00, description: 'MIXED FLOWERS' }],
+                    hasHouses: false,
+                    houseBills: []
+                }
+            ]);
+        }
+        
+        // Escuchar eventos
+        traxon.addEventListener('traxon-opened', (e) => {
+            console.log('📦 Modal abierto:', e.detail);
+        });
+        
+        traxon.addEventListener('traxon-closed', () => {
+            console.log('🔒 Modal cerrado');
+        });
+        
+        traxon.addEventListener('traxon-config-updated', (e) => {
+            console.log('⚙️ Configuración actualizada:', e.detail);
+        });
+    </script>
+</body>
+</html>

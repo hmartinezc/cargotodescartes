@@ -1,0 +1,30 @@
+{
+  "name": "traxon-connector",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:embed": "vite build --config vite.embed.config.ts",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "lucide-react": "^0.561.0",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.18",
+    "@types/node": "^22.14.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "autoprefixer": "^10.4.23",
+    "cross-env": "^7.0.3",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.18",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}

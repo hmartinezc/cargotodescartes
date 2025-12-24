@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test Producción - Traxon Connector</title>
+  <style>
+    /* Simular estilos de un sitio host que podría interferir */
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background: #f0f0f0;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    /* Estilos del host que podrían interferir */
+    input, select, textarea {
+      border: 2px solid #333 !important;
+      background: #eee !important;
+    }
+    .flex {
+      display: block !important; /* Intento de interferir */
+    }
+  </style>
+</head>
+<body>
+  <h1>Test de Producción - Traxon Connector</h1>
+  <p>Este archivo simula un entorno de producción con estilos del host que podrían interferir.</p>
+  
+  <button onclick="openDemo()" style="padding: 10px 20px; font-size: 16px; cursor: pointer;">
+    Abrir Modal (Demo)
+  </button>
+  
+  <button onclick="openWithData()" style="padding: 10px 20px; font-size: 16px; cursor: pointer; margin-left: 10px;">
+    Abrir con Datos
+  </button>
+
+  <!-- Web Component -->
+  <traxon-connector id="traxonModal"></traxon-connector>
+
+  <!-- Cargar el bundle de producción -->
+  <script src="dist-embed/traxon-connector.js"></script>
+  
+  <script>
+    function openDemo() {
+      document.getElementById('traxonModal').open();
+    }
+    
+    function openWithData() {
+      document.getElementById('traxonModal').openWithShipment({
+        awbNumber: '145-99887766',
+        origin: 'BOG',
+        destination: 'MIA',
+        pieces: 10,
+        weight: 150.5,
+        weightUnit: 'KILOGRAM',
+        description: 'TEST PRODUCTION ENVIRONMENT',
+        currency: 'USD',
+        paymentMethod: 'Prepaid',
+        shipper: {
+          name: 'EXPORTADORA TEST S.A.S',
+          taxId: '900123456-1',
+          address: {
+            street: 'Calle 100 #45-67',
+            place: 'BOGOTA',
+            countryCode: 'CO',
+            postalCode: '110111'
+          }
+        },
+        consignee: {
+          name: 'IMPORT COMPANY LLC',
+          address: {
+            street: '123 Main Street',
+            place: 'MIAMI',
+            countryCode: 'US',
+            state: 'FL',
+            postalCode: '33101'
+          }
+        },
+        agent: {
+          name: 'AGENTE CARGO LTDA',
+          iataCode: '12-3456789',
+          place: 'BOGOTA'
+        },
+        flights: [
+          { flightNumber: 'AV123', origin: 'BOG', destination: 'MIA', date: '2025-12-25' }
+        ],
+        rates: [
+          { pieces: 10, weight: 150.5, rateClassCode: 'Q', rateOrCharge: 2.50, total: 376.25 }
+        ],
+        hasHouses: false
+      });
+    }
+  </script>
+</body>
+</html>

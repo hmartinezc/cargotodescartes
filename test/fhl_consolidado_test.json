@@ -1,0 +1,278 @@
+[
+  {
+    "type": "house waybill",
+    "id": "test-fhl-001",
+    "messageHeader": {
+      "addressing": {
+        "senderAddresses": [
+          {
+            "type": "PIMA",
+            "address": "REUFFW90AVTOPF/BOG01"
+          }
+        ],
+        "finalRecipientAddresses": [
+          {
+            "type": "PIMA",
+            "address": "USCAIR01LUXXSXS"
+          }
+        ]
+      },
+      "creationDate": "2025-12-17T10:00:00.000"
+    },
+    "airWaybillNumber": "145-98765432",
+    "origin": "BOG",
+    "destination": "MIA",
+    "serialNumber": "HAWB2025001",
+    "numberOfPieces": "25",
+    "weight": {
+      "amount": "425.0",
+      "unit": "KILOGRAM"
+    },
+    "natureOfGoods": "ROSES RED",
+    "shipper": {
+      "address": {
+        "name1": "FINCA LAS ROSAS SAS",
+        "streetAddress1": "VEREDA LA ESPERANZA KM 5",
+        "place": "CHIA",
+        "country": "CO",
+        "postCode": "250001"
+      }
+    },
+    "consignee": {
+      "address": {
+        "name1": "BLOOM MIAMI LLC",
+        "streetAddress1": "1000 NW 25TH STREET",
+        "place": "MIAMI",
+        "stateProvince": "FL",
+        "country": "US",
+        "postCode": "33127"
+      }
+    },
+    "flights": [
+      {
+        "flight": "LA4567",
+        "scheduledDate": "2025-12-18"
+      }
+    ],
+    "route": [
+      {
+        "carrierCode": "LA",
+        "destination": "MIA"
+      }
+    ],
+    "chargeDeclarations": {
+      "isoCurrencyCode": "USD",
+      "chargeCode": "ALL_CHARGES_COLLECT",
+      "payment_WeightValuation": "Collect",
+      "payment_OtherCharges": "Collect"
+    },
+    "carriersExecution": {
+      "date": "2025-12-17",
+      "placeOrAirportCityCode": "BOGOTA",
+      "authorisationSignature": "AVTOPF"
+    },
+    "agentsHeadOffice": {
+      "address": {
+        "name1": "FINCA LAS ROSAS SAS",
+        "streetAddress1": "VEREDA LA ESPERANZA KM 5",
+        "place": "CHIA",
+        "country": "CO",
+        "postCode": "250001"
+      }
+    },
+    "specialHandlingCodes": ["EAP", "PER"],
+    "oci": [
+      {
+        "isoCountryCode": "US",
+        "informationIdentifier": "ISS",
+        "controlInformation": "SECURITY_STATUS",
+        "additionalControlInformation": "SPX",
+        "supplementaryControlInformation": "RA-CO-01234-567"
+      }
+    ]
+  },
+  {
+    "type": "house waybill",
+    "id": "test-fhl-002",
+    "messageHeader": {
+      "addressing": {
+        "senderAddresses": [
+          {
+            "type": "PIMA",
+            "address": "REUFFW90AVTOPF/BOG01"
+          }
+        ],
+        "finalRecipientAddresses": [
+          {
+            "type": "PIMA",
+            "address": "USCAIR01LUXXSXS"
+          }
+        ]
+      },
+      "creationDate": "2025-12-17T10:00:00.000"
+    },
+    "airWaybillNumber": "145-98765432",
+    "origin": "BOG",
+    "destination": "MIA",
+    "serialNumber": "HAWB2025002",
+    "numberOfPieces": "25",
+    "weight": {
+      "amount": "425.0",
+      "unit": "KILOGRAM"
+    },
+    "natureOfGoods": "CARNATIONS",
+    "shipper": {
+      "address": {
+        "name1": "FLORES DEL CAMPO LTDA",
+        "streetAddress1": "KM 8 VIA BOGOTA CHIA",
+        "place": "CAJICA",
+        "country": "CO",
+        "postCode": "250240"
+      }
+    },
+    "consignee": {
+      "address": {
+        "name1": "SUNNY FLOWERS INC",
+        "streetAddress1": "2500 NW 79TH AVE",
+        "place": "DORAL",
+        "stateProvince": "FL",
+        "country": "US",
+        "postCode": "33122"
+      }
+    },
+    "flights": [
+      {
+        "flight": "LA4567",
+        "scheduledDate": "2025-12-18"
+      }
+    ],
+    "route": [
+      {
+        "carrierCode": "LA",
+        "destination": "MIA"
+      }
+    ],
+    "chargeDeclarations": {
+      "isoCurrencyCode": "USD",
+      "chargeCode": "ALL_CHARGES_COLLECT",
+      "payment_WeightValuation": "Collect",
+      "payment_OtherCharges": "Collect"
+    },
+    "carriersExecution": {
+      "date": "2025-12-17",
+      "placeOrAirportCityCode": "BOGOTA",
+      "authorisationSignature": "AVTOPF"
+    },
+    "agentsHeadOffice": {
+      "address": {
+        "name1": "FLORES DEL CAMPO LTDA",
+        "streetAddress1": "KM 8 VIA BOGOTA CHIA",
+        "place": "CAJICA",
+        "country": "CO",
+        "postCode": "250240"
+      }
+    },
+    "specialHandlingCodes": ["EAP", "PER"],
+    "oci": [
+      {
+        "isoCountryCode": "US",
+        "informationIdentifier": "ISS",
+        "controlInformation": "SECURITY_STATUS",
+        "additionalControlInformation": "SPX",
+        "supplementaryControlInformation": "RA-CO-01234-567"
+      }
+    ]
+  },
+  {
+    "type": "house waybill",
+    "id": "test-fhl-003",
+    "messageHeader": {
+      "addressing": {
+        "senderAddresses": [
+          {
+            "type": "PIMA",
+            "address": "REUFFW90AVTOPF/BOG01"
+          }
+        ],
+        "finalRecipientAddresses": [
+          {
+            "type": "PIMA",
+            "address": "USCAIR01LUXXSXS"
+          }
+        ]
+      },
+      "creationDate": "2025-12-17T10:00:00.000"
+    },
+    "airWaybillNumber": "145-98765432",
+    "origin": "BOG",
+    "destination": "MIA",
+    "serialNumber": "HAWB2025003",
+    "numberOfPieces": "25",
+    "weight": {
+      "amount": "425.0",
+      "unit": "KILOGRAM"
+    },
+    "natureOfGoods": "ORCHIDS",
+    "shipper": {
+      "address": {
+        "name1": "ORQUIDEAS COLOMBIA SAS",
+        "streetAddress1": "FINCA EL PARAISO VDA CENTRO",
+        "place": "FUSAGASUGA",
+        "country": "CO",
+        "postCode": "252211"
+      }
+    },
+    "consignee": {
+      "address": {
+        "name1": "ORCHID WORLD USA",
+        "streetAddress1": "3200 NW 67TH AVE",
+        "place": "MIAMI",
+        "stateProvince": "FL",
+        "country": "US",
+        "postCode": "33122"
+      }
+    },
+    "flights": [
+      {
+        "flight": "LA4567",
+        "scheduledDate": "2025-12-18"
+      }
+    ],
+    "route": [
+      {
+        "carrierCode": "LA",
+        "destination": "MIA"
+      }
+    ],
+    "chargeDeclarations": {
+      "isoCurrencyCode": "USD",
+      "chargeCode": "ALL_CHARGES_COLLECT",
+      "payment_WeightValuation": "Collect",
+      "payment_OtherCharges": "Collect"
+    },
+    "carriersExecution": {
+      "date": "2025-12-17",
+      "placeOrAirportCityCode": "BOGOTA",
+      "authorisationSignature": "AVTOPF"
+    },
+    "agentsHeadOffice": {
+      "address": {
+        "name1": "ORQUIDEAS COLOMBIA SAS",
+        "streetAddress1": "FINCA EL PARAISO VDA CENTRO",
+        "place": "FUSAGASUGA",
+        "country": "CO",
+        "postCode": "252211"
+      }
+    },
+    "specialHandlingCodes": ["EAP", "PER"],
+    "oci": [
+      {
+        "isoCountryCode": "US",
+        "informationIdentifier": "ISS",
+        "controlInformation": "SECURITY_STATUS",
+        "additionalControlInformation": "SPX",
+        "supplementaryControlInformation": "RA-CO-01234-567"
+      }
+    ]
+  }
+]

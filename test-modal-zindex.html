@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test Modal Z-Index - Simulación Razor Page</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f3f4f6;
+    }
+    
+    /* ========================================
+       SIMULAR NAVBAR DE RAZOR PAGE CON Z-INDEX ALTO
+       ======================================== */
+    .navbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 60px;
+      background: linear-gradient(135deg, #1e3a8a, #3b82f6);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      z-index: 9999; /* Z-index alto típico de navbars */
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    }
+    
+    .navbar-brand {
+      font-size: 1.5rem;
+      font-weight: bold;
+    }
+    
+    .navbar-menu {
+      display: flex;
+      gap: 20px;
+    }
+    
+    .navbar-menu a {
+      color: white;
+      text-decoration: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      transition: background 0.2s;
+    }
+    
+    .navbar-menu a:hover {
+      background: rgba(255,255,255,0.2);
+    }
+    
+    /* ========================================
+       SIMULAR SIDEBAR CON Z-INDEX
+       ======================================== */
+    .sidebar {
+      position: fixed;
+      top: 60px;
+      left: 0;
+      bottom: 0;
+      width: 240px;
+      background: #1f2937;
+      color: #9ca3af;
+      z-index: 100;
+      padding: 20px 0;
+      overflow-y: auto;
+    }
+    
+    .sidebar-item {
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .sidebar-item:hover {
+      background: #374151;
+      color: white;
+    }
+    
+    .sidebar-item.active {
+      background: #3b82f6;
+      color: white;
+    }
+    
+    /* ========================================
+       CONTENIDO PRINCIPAL
+       ======================================== */
+    .main-content {
+      margin-left: 240px;
+      margin-top: 60px;
+      padding: 24px;
+      min-height: calc(100vh - 60px);
+    }
+    
+    .card {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    
+    .card h2 {
+      color: #1f2937;
+      margin-bottom: 16px;
+      font-size: 1.25rem;
+    }
+    
+    .card p {
+      color: #6b7280;
+      line-height: 1.6;
+    }
+    
+    /* ========================================
+       BOTÓN PARA ABRIR MODAL
+       ======================================== */
+    .btn-primary {
+      background: linear-gradient(135deg, #3b82f6, #2563eb);
+      color: white;
+      border: none;
+      padding: 14px 28px;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(59, 130, 246, 0.4);
+    }
+    
+    /* ========================================
+       DROPDOWN/TOOLTIP CON Z-INDEX ALTO (para probar)
+       ======================================== */
+    .dropdown-menu {
+      position: absolute;
+      top: 100%;
+      right: 0;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+      min-width: 200px;
+      z-index: 10000;
+      display: none;
+      padding: 8px 0;
+    }
+    
+    .dropdown:hover .dropdown-menu {
+      display: block;
+    }
+    
+    .dropdown-item {
+      padding: 10px 16px;
+      color: #374151;
+      text-decoration: none;
+      display: block;
+      transition: background 0.2s;
+    }
+    
+    .dropdown-item:hover {
+      background: #f3f4f6;
+    }
+    
+    /* ========================================
+       MODAL OVERLAY DE OTRO COMPONENTE (para probar conflicto)
+       ======================================== */
+    .fake-modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 5000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .fake-modal-overlay.show {
+      display: flex;
+    }
+    
+    .fake-modal {
+      background: white;
+      padding: 32px;
+      border-radius: 12px;
+      max-width: 400px;
+      z-index: 5001;
+    }
+    
+    /* Status badges */
+    .status-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    
+    .status-badge.success {
+      background: #dcfce7;
+      color: #166534;
+    }
+    
+    .status-badge.warning {
+      background: #fef3c7;
+      color: #92400e;
+    }
+    
+    /* Table */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+    }
+    
+    th, td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    
+    th {
+      background: #f9fafb;
+      font-weight: 600;
+      color: #374151;
+    }
+    
+    tr:hover {
+      background: #f9fafb;
+    }
+    
+    /* Info box */
+    .info-box {
+      background: #dbeafe;
+      border: 1px solid #93c5fd;
+      border-radius: 8px;
+      padding: 16px;
+      margin-top: 16px;
+      color: #1e40af;
+    }
+  </style>
+</head>
+<body>
+  
+  <!-- ========================================
+       NAVBAR (Z-INDEX 9999)
+       ======================================== -->
+  <nav class="navbar">
+    <div class="navbar-brand">🚀 MiApp Razor</div>
+    <div class="navbar-menu">
+      <a href="#">Dashboard</a>
+      <a href="#">Envíos</a>
+      <a href="#">Reportes</a>
+      <div class="dropdown" style="position: relative;">
+        <a href="#">Usuario ▼</a>
+        <div class="dropdown-menu">
+          <a href="#" class="dropdown-item">Mi Perfil</a>
+          <a href="#" class="dropdown-item">Configuración</a>
+          <a href="#" class="dropdown-item">Cerrar Sesión</a>
+        </div>
+      </div>
+    </div>
+  </nav>
+  
+  <!-- ========================================
+       SIDEBAR (Z-INDEX 100)
+       ======================================== -->
+  <aside class="sidebar">
+    <div class="sidebar-item active">
+      📊 Dashboard
+    </div>
+    <div class="sidebar-item">
+      📦 Envíos
+    </div>
+    <div class="sidebar-item">
+      ✈️ AWB Management
+    </div>
+    <div class="sidebar-item">
+      📋 Manifiestos
+    </div>
+    <div class="sidebar-item">
+      📈 Reportes
+    </div>
+    <div class="sidebar-item">
+      ⚙️ Configuración
+    </div>
+  </aside>
+  
+  <!-- ========================================
+       CONTENIDO PRINCIPAL
+       ======================================== -->
+  <main class="main-content">
+    <div class="card">
+      <h2>🧪 Test de Z-Index del Modal Traxon</h2>
+      <p>
+        Esta página simula una aplicación Razor Pages típica con:
+      </p>
+      <ul style="margin: 16px 0; padding-left: 24px; color: #6b7280;">
+        <li><strong>Navbar fijo</strong> con z-index: 9999</li>
+        <li><strong>Sidebar</strong> con z-index: 100</li>
+        <li><strong>Dropdowns</strong> con z-index: 10000</li>
+      </ul>
+      <p style="margin-top: 16px;">
+        El modal de Traxon debería aparecer <strong>por encima de todos estos elementos</strong>.
+      </p>
+      
+      <div style="margin-top: 24px; display: flex; gap: 12px;">
+        <button class="btn-primary" onclick="openTraxonModal()">
+          🚀 Abrir Modal Traxon
+        </button>
+        <button class="btn-primary" style="background: linear-gradient(135deg, #10b981, #059669);" onclick="openWithMultiple()">
+          📋 Abrir con Múltiples AWB
+        </button>
+      </div>
+      
+      <div class="info-box">
+        <strong>✅ Resultado esperado:</strong> El modal debe cubrir TODA la pantalla, incluyendo el navbar azul de arriba y el sidebar oscuro de la izquierda. Debe tener un tamaño compacto (no ocupar toda la altura) y tener scroll interno.
+      </div>
+    </div>
+    
+    <div class="card">
+      <h2>📦 Tabla de Envíos (simulada)</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>AWB</th>
+            <th>Origen</th>
+            <th>Destino</th>
+            <th>Estado</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>145-12345678</code></td>
+            <td>BOG</td>
+            <td>MIA</td>
+            <td><span class="status-badge success">Confirmado</span></td>
+            <td><button onclick="openWithAwb('145-12345678')">Ver</button></td>
+          </tr>
+          <tr>
+            <td><code>145-87654321</code></td>
+            <td>MDE</td>
+            <td>JFK</td>
+            <td><span class="status-badge warning">Pendiente</span></td>
+            <td><button onclick="openWithAwb('145-87654321')">Ver</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+  
+  <!-- ========================================
+       TRAXON CONNECTOR WEB COMPONENT
+       ======================================== -->
+  <traxon-connector id="traxonModal"></traxon-connector>
+  
+  <!-- Cargar el script del web component -->
+  <script src="dist-embed/traxon-connector.js"></script>
+  
+  <script>
+    // Función para abrir el modal con datos de demo
+    function openTraxonModal() {
+      const modal = document.getElementById('traxonModal');
+      modal.open();
+    }
+    
+    // Función para abrir con un AWB específico
+    function openWithAwb(awb) {
+      const modal = document.getElementById('traxonModal');
+      modal.openWithShipment({
+        awbNumber: awb,
+        origin: 'BOG',
+        destination: 'MIA',
+        pieces: 10,
+        weight: 150.5,
+        description: 'FRESH FLOWERS'
+      });
+    }
+    
+    // Función para abrir con múltiples AWBs
+    function openWithMultiple() {
+      const modal = document.getElementById('traxonModal');
+      modal.openWithShipments([
+        {
+          awbNumber: '145-11111111',
+          origin: 'BOG',
+          destination: 'MIA',
+          pieces: 5,
+          weight: 100,
+          description: 'FLOWERS ROSES'
+        },
+        {
+          awbNumber: '145-22222222',
+          origin: 'MDE',
+          destination: 'LAX',
+          pieces: 8,
+          weight: 200,
+          description: 'FRESH FRUITS'
+        },
+        {
+          awbNumber: '145-33333333',
+          origin: 'CTG',
+          destination: 'JFK',
+          pieces: 12,
+          weight: 350,
+          description: 'ORGANIC VEGETABLES'
+        }
+      ]);
+    }
+    
+    // Escuchar eventos del componente
+    document.getElementById('traxonModal').addEventListener('traxon-opened', (e) => {
+      console.log('Modal abierto:', e.detail);
+    });
+    
+    document.getElementById('traxonModal').addEventListener('traxon-closed', () => {
+      console.log('Modal cerrado');
+    });
+  </script>
+</body>
+</html>
