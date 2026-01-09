@@ -1,5 +1,6 @@
-﻿import React, { useState } from 'react';
-import { HelpCircle } from 'lucide-react';
+﻿import { useState } from 'preact/hooks';
+import { FunctionComponent, JSX } from 'preact';
+import { HelpCircle } from 'lucide-preact';
 
 interface FieldWithHelpProps {
   label: string;
@@ -22,7 +23,7 @@ interface FieldWithHelpProps {
  * - Indica visualmente si es requerido u opcional
  * - Muestra contador de caracteres si hay maxLength
  */
-export const FieldWithHelp: React.FC<FieldWithHelpProps> = ({
+export const FieldWithHelp: FunctionComponent<FieldWithHelpProps> = ({
   label,
   value,
   onChange,
@@ -122,7 +123,7 @@ interface SelectWithHelpProps {
   className?: string;
 }
 
-export const SelectWithHelp: React.FC<SelectWithHelpProps> = ({
+export const SelectWithHelp: FunctionComponent<SelectWithHelpProps> = ({
   label,
   value,
   onChange,
@@ -207,7 +208,7 @@ interface TextAreaWithHelpProps {
   className?: string;
 }
 
-export const TextAreaWithHelp: React.FC<TextAreaWithHelpProps> = ({
+export const TextAreaWithHelp: FunctionComponent<TextAreaWithHelpProps> = ({
   label,
   value,
   onChange,

@@ -1,8 +1,9 @@
-﻿import React, { useState, useEffect, useCallback } from 'react';
+﻿import { useState, useEffect, useCallback } from 'preact/hooks';
+import { FunctionComponent, JSX } from 'preact';
 import { 
   Settings, X, Plus, Trash2, AlertTriangle, CheckCircle2, 
   Plane, Globe, Shield, Clock, ChevronDown, ChevronRight, Info, Radio
-} from 'lucide-react';
+} from 'lucide-preact';
 import { 
   ConnectorConfig, DEFAULT_CONNECTOR_CONFIG,
   AVAILABLE_SPH_CODES, AVAILABLE_OCI_CONTROL_INFO
@@ -32,13 +33,13 @@ interface ConfigPanelProps {
 
 interface CollapsibleSectionProps {
   title: string;
-  icon: React.ReactNode;
-  children: React.ReactNode;
+  icon: JSX.Element;
+  children: JSX.Element | JSX.Element[] | null;
   defaultOpen?: boolean;
   badge?: string;
 }
 
-const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({ title, icon, children, defaultOpen = false, badge }) => {
+const CollapsibleSection: FunctionComponent<CollapsibleSectionProps> = ({ title, icon, children, defaultOpen = false, badge }) => {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   
   return (
@@ -65,7 +66,7 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({ title, icon, ch
 // COMPONENTE PRINCIPAL
 // ============================================================
 
-export const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, onClose, onConfigChange }) => {
+export const ConfigPanel: FunctionComponent<ConfigPanelProps> = ({ isOpen, onClose, onConfigChange }) => {
   const [config, setConfig] = useState<ConnectorConfig>(() => ({ ...sessionConfig }));
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [newAirlineCode, setNewAirlineCode] = useState('');
@@ -241,7 +242,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, onClose, onCon
                 </p>
                 
                 {/* Selector de Ambiente */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                <div className="grid grid-cols-2 gap-3 mb-4">
                   {/* Opción Producción */}
                   <button
                     onClick={() => handleEnvironmentChange('PRODUCTION')}

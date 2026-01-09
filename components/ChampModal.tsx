@@ -1,5 +1,7 @@
 ﻿
-import React, { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { FunctionComponent, JSX } from 'preact';
+import { memo } from 'preact/compat';
 import { InternalShipment, ShipmentStatus, Party, Agent, FlightSegment, OtherCharge, SecurityInfo, AVAILABLE_SPH_CODES, AVAILABLE_OCI_CONTROL_INFO, DEFAULT_SPH_BY_AIRLINE, loadConnectorConfig, ConnectorConfig, InternalHouseBill, HouseBill } from '../types';
 import { generateAirWayBillMessage, generateConsolidationListMessage, generateConsolidationListMessages, getAwbPrefix, getDefaultSphCodes, sanitizeGoodsDescription } from '../services/champService';
 import { sendCompleteShipment, UAT_CONFIG, TraxonSendResult, getTransmissionEnvironment, getApiConfig } from '../services/traxonApiClient';
@@ -7,7 +9,7 @@ import {
   X, Send, Plane, Users, ShieldCheck, Banknote, Layers, Info, MapPin, FileJson, Copy, Check, AlertTriangle, 
   Building, User, Briefcase, Calendar, PenLine, Eye, Package, Scale, Clock, CheckCircle2, Loader2, Wifi, Plus, Trash2, Settings,
   ChevronDown, ChevronRight, Code, FileText
-} from 'lucide-react';
+} from 'lucide-preact';
 import { ConfigPanel } from './ConfigPanel';
 
 // ============================================================
@@ -305,11 +307,11 @@ HouseRow.displayName = 'HouseRow';
 // Componente colapsable para secciones opcionales
 interface CollapsibleOptionalProps {
   title: string;
-  children: React.ReactNode;
+  children: JSX.Element | JSX.Element[] | null;
   defaultOpen?: boolean;
 }
 
-const CollapsibleOptional: React.FC<CollapsibleOptionalProps> = ({ title, children, defaultOpen = false }) => {
+const CollapsibleOptional: FunctionComponent<CollapsibleOptionalProps> = ({ title, children, defaultOpen = false }) => {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   return (
     <div className="border border-slate-100 rounded overflow-hidden mt-2">
@@ -364,7 +366,7 @@ interface InputGroupProps {
   required?: boolean;
 }
 
-const InputGroup: React.FC<InputGroupProps> = ({ 
+const InputGroup: FunctionComponent<InputGroupProps> = ({ 
   label, value, onChange, readOnly = false, maxLength, placeholder, className = "", type = "text", required = false 
 }) => {
   const strValue = value?.toString() || '';
@@ -412,13 +414,13 @@ const InputGroup: React.FC<InputGroupProps> = ({
 // Componente para mostrar sección de Party (Shipper/Consignee)
 interface PartySectionProps {
   title: string;
-  icon: React.ReactNode;
+  icon: JSX.Element;
   party: Party;
   onUpdate: (party: Party) => void;
   readOnly: boolean;
 }
 
-const PartySection: React.FC<PartySectionProps> = ({ title, icon, party, onUpdate, readOnly }) => {
+const PartySection: FunctionComponent<PartySectionProps> = ({ title, icon, party, onUpdate, readOnly }) => {
   const updateField = (field: string, value: string) => {
     if (field.includes('.')) {
       const [parent, child] = field.split('.');
@@ -477,7 +479,7 @@ interface AgentSectionProps {
   readOnly: boolean;
 }
 
-const AgentSection: React.FC<AgentSectionProps> = ({ agent, onUpdate, readOnly }) => {
+const AgentSection: FunctionComponent<AgentSectionProps> = ({ agent, onUpdate, readOnly }) => {
   const updateField = (field: keyof Agent, value: string) => {
     onUpdate({ ...agent, [field]: value });
   };
@@ -502,14 +504,14 @@ const AgentSection: React.FC<AgentSectionProps> = ({ agent, onUpdate, readOnly }
 
 // Componente de Resumen Visual
 interface SummaryCardProps {
-  icon: React.ReactNode;
+  icon: JSX.Element;
   label: string;
   value: string | number;
   subvalue?: string;
   color?: string;
 }
 
-const SummaryCard: React.FC<SummaryCardProps> = ({ icon, label, value, subvalue, color = 'blue' }) => {
+const SummaryCard: FunctionComponent<SummaryCardProps> = ({ icon, label, value, subvalue, color = 'blue' }) => {
   const colorClasses: Record<string, string> = {
     blue: 'bg-purple-50 border-purple-200 text-purple-700',
     green: 'bg-green-50 border-green-200 text-green-700',
@@ -536,7 +538,7 @@ const SummaryCard: React.FC<SummaryCardProps> = ({ icon, label, value, subvalue,
 
 interface ExpandableJsonSectionProps {
   title: string;
-  icon: React.ReactNode;
+  icon: JSX.Element;
   data: any;
   color?: 'blue' | 'green' | 'amber' | 'purple' | 'slate' | 'red';
   defaultExpanded?: boolean;
@@ -544,7 +546,7 @@ interface ExpandableJsonSectionProps {
   isRequired?: boolean;
 }
 
-const ExpandableJsonSection: React.FC<ExpandableJsonSectionProps> = ({ 
+const ExpandableJsonSection: FunctionComponent<ExpandableJsonSectionProps> = ({ 
   title, icon, data, color = 'blue', defaultExpanded = false, description, isRequired = false 
 }) => {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
@@ -563,7 +565,7 @@ const ExpandableJsonSection: React.FC<ExpandableJsonSectionProps> = ({
   const fieldCount = data && typeof data === 'object' ? Object.keys(data).length : (data ? 1 : 0);
 
   // Renderiza un valor de forma recursiva
-  const renderValue = (value: any, depth: number = 0): React.ReactNode => {
+  const renderValue = (value: any, depth: number = 0): JSX.Element | string => {
     if (value === null || value === undefined) {
       return <span className="text-slate-400 italic">null</span>;
     }
@@ -656,7 +658,7 @@ const ExpandableJsonSection: React.FC<ExpandableJsonSectionProps> = ({
 // COMPONENTE PRINCIPAL DEL MODAL
 // ============================================================
 
-export const ChampModal: React.FC<ChampModalProps> = ({ isOpen, onClose, shipment, onSave, onTransmitSuccess }) => {
+export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose, shipment, onSave, onTransmitSuccess }) => {
   const [activeTab, setActiveTab] = useState<Tab>('parties');
   const [activeJsonTab, setActiveJsonTab] = useState<JsonSubTab>('fwb');
   const [formData, setFormData] = useState<InternalShipment | null>(null);

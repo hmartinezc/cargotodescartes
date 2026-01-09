@@ -27,13 +27,14 @@
  * ============================================================
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
-import ReactDOM from 'react-dom/client';
+import { FunctionComponent } from 'preact';
+import { useState, useCallback, useEffect } from 'preact/hooks';
+import { render } from 'preact';
 import { InternalShipment, ShipmentStatus, TransmissionLog, loadConnectorConfig, saveConnectorConfig, ConnectorConfig, DEFAULT_CONNECTOR_CONFIG } from '../types';
 import { ChampModal } from '../components/ChampModal';
 import { TraxonSendResult, UAT_CONFIG, saveApiConfig, getApiConfig, ApiConfig } from '../services/traxonApiClient';
 import { mockShipments } from '../mockData';
-import { Plane, Package, MapPin, Building, User, Scale, Layers, Send, ChevronRight, X } from 'lucide-react';
+import { Plane, Package, MapPin, Building, User, Scale, Layers, Send, ChevronRight, X } from 'lucide-preact';
 import tailwindStyles from './index.css?inline';
 
 // ============================================================
@@ -372,7 +373,7 @@ interface CompactAwbViewProps {
   onClose: () => void;
 }
 
-const CompactAwbView: React.FC<CompactAwbViewProps> = ({ shipment, onOpenModal, onClose }) => {
+const CompactAwbView: FunctionComponent<CompactAwbViewProps> = ({ shipment, onOpenModal, onClose }) => {
   const getStatusBadge = (status: ShipmentStatus) => {
     const config: Record<ShipmentStatus, { bg: string; text: string; label: string }> = {
       DRAFT: { bg: 'bg-gray-100', text: 'text-gray-600', label: 'Borrador' },
@@ -566,7 +567,7 @@ interface TraxonConnectorAppProps {
   }) => void; // Callback para notificar resultado de transmisión
 }
 
-const TraxonConnectorApp: React.FC<TraxonConnectorAppProps> = ({ 
+const TraxonConnectorApp: FunctionComponent<TraxonConnectorAppProps> = ({ 
   initialShipment,
   initialShipments,
   onClose,
@@ -748,7 +749,7 @@ interface MultipleShipmentsViewProps {
   onClose: () => void;
 }
 
-const MultipleShipmentsView: React.FC<MultipleShipmentsViewProps> = ({
+const MultipleShipmentsView: FunctionComponent<MultipleShipmentsViewProps> = ({
   shipments,
   onSelectShipment,
   onClose
@@ -1197,7 +1198,7 @@ function createShipmentFromPartial(partial: Partial<InternalShipment>): Internal
 // WEB COMPONENT CLASS
 // ============================================================
 class TraxonConnectorElement extends HTMLElement {
-  private root: ReactDOM.Root | null = null;
+  private portalMountRef: HTMLDivElement | null = null;
   private shadowRoot_: ShadowRoot;
   private isVisible: boolean = false;
   private currentShipment: Partial<InternalShipment> | null = null;
@@ -1271,21 +1272,21 @@ class TraxonConnectorElement extends HTMLElement {
   }
 
   connectedCallback() {
-    // Montar React - usamos el portal para mejor z-index
+    // Montar Preact - usamos el portal para mejor z-index
     const { shadow } = this.getOrCreatePortal();
     const portalMount = shadow.getElementById('traxon-portal-mount') as HTMLDivElement;
     
     if (portalMount) {
-      this.root = ReactDOM.createRoot(portalMount);
-      this.render();
+      this.portalMountRef = portalMount;
+      this.renderApp();
     }
   }
 
   disconnectedCallback() {
-    // Desmontar React
-    if (this.root) {
-      this.root.unmount();
-      this.root = null;
+    // Desmontar Preact
+    if (this.portalMountRef) {
+      render(null, this.portalMountRef);
+      this.portalMountRef = null;
     }
     
     // Limpiar portal del body
@@ -1296,14 +1297,13 @@ class TraxonConnectorElement extends HTMLElement {
     }
   }
 
-  private render() {
+  private renderApp() {
     // Actualizar visibilidad del portal
     this.updatePortalVisibility(this.isVisible);
     
-    if (this.root) {
-      this.root.render(
-        <React.StrictMode>
-          <TraxonConnectorApp
+    if (this.portalMountRef) {
+      render(
+        <TraxonConnectorApp
             initialShipment={this.currentShipment}
             initialShipments={this.currentShipments}
             onClose={() => this.close()}
@@ -1330,8 +1330,8 @@ class TraxonConnectorElement extends HTMLElement {
                 composed: true 
               }));
             }}
-          />
-        </React.StrictMode>
+          />,
+        this.portalMountRef
       );
     }
   }
@@ -1378,7 +1378,7 @@ class TraxonConnectorElement extends HTMLElement {
     this.currentShipments = null;
     this.isVisible = true;
     this.setAttribute('data-visible', 'true');
-    this.render();
+    this.renderApp();
     
     // Disparar evento
     this.dispatchEvent(new CustomEvent('traxon-opened', { 
@@ -1409,7 +1409,7 @@ class TraxonConnectorElement extends HTMLElement {
     this.currentShipments = shipmentsOnly;
     this.isVisible = true;
     this.setAttribute('data-visible', 'true');
-    this.render();
+    this.renderApp();
     
     // Disparar evento
     this.dispatchEvent(new CustomEvent('traxon-opened', { 
@@ -1427,7 +1427,7 @@ class TraxonConnectorElement extends HTMLElement {
     this.currentShipments = null;
     this.isVisible = true;
     this.setAttribute('data-visible', 'true');
-    this.render();
+    this.renderApp();
     
     this.dispatchEvent(new CustomEvent('traxon-opened', { 
       detail: { shipment: null, usingDemo: true },
@@ -1444,7 +1444,7 @@ class TraxonConnectorElement extends HTMLElement {
     this.currentShipment = null;
     this.currentShipments = null;
     this.removeAttribute('data-visible');
-    this.render();
+    this.renderApp();
     
     this.dispatchEvent(new CustomEvent('traxon-closed', { 
       bubbles: true,
@@ -1537,9 +1537,9 @@ declare global {
     'traxon-connector': TraxonConnectorElement;
   }
   
-  namespace JSX {
+  namespace preact.JSX {
     interface IntrinsicElements {
-      'traxon-connector': React.DetailedHTMLProps<React.HTMLAttributes<TraxonConnectorElement>, TraxonConnectorElement>;
+      'traxon-connector': JSX.HTMLAttributes<TraxonConnectorElement>;
     }
   }
 }

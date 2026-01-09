@@ -15,23 +15,23 @@
  * ============================================================
  */
 
-import React from 'react';
+import { FunctionComponent, JSX, Fragment } from 'preact';
 import { InternalShipment, ShipmentStatus } from '../types';
 import { 
   Plane, Package, MapPin, Building, User, Scale, Layers, 
   Send, ChevronRight, X, Calendar, Clock, FileText, 
   ArrowRight, Briefcase, ShieldCheck, DollarSign
-} from 'lucide-react';
+} from 'lucide-preact';
 
 interface FullScreenAwbViewProps {
   shipment: InternalShipment;
   onOpenModal: () => void;
   onClose: () => void;
-  getStatusBadge?: (status: ShipmentStatus) => React.ReactNode;
+  getStatusBadge?: (status: ShipmentStatus) => JSX.Element;
 }
 
 // Componente para mostrar badge de status
-const StatusBadge: React.FC<{ status: ShipmentStatus }> = ({ status }) => {
+const StatusBadge: FunctionComponent<{ status: ShipmentStatus }> = ({ status }) => {
   const config = {
     DRAFT: { bg: 'bg-gray-100', text: 'text-gray-600', border: 'border-gray-200', label: 'Draft' },
     TRANSMITTED: { bg: 'bg-purple-100', text: 'text-purple-700', border: 'border-purple-200', label: 'Pending' },
@@ -49,7 +49,7 @@ const StatusBadge: React.FC<{ status: ShipmentStatus }> = ({ status }) => {
 };
 
 // Componente para mostrar múltiples rutas/vuelos
-const RouteCard: React.FC<{ shipment: InternalShipment }> = ({ shipment }) => {
+const RouteCard: FunctionComponent<{ shipment: InternalShipment }> = ({ shipment }) => {
   const flights = shipment.flights || [];
   const hasMultipleFlights = flights.length > 1;
   
@@ -108,7 +108,7 @@ const RouteCard: React.FC<{ shipment: InternalShipment }> = ({ shipment }) => {
       {/* Visualización de ruta con múltiples puntos */}
       <div className="flex items-center justify-between overflow-x-auto pb-2">
         {uniquePoints.map((point, idx) => (
-          <React.Fragment key={`${point}-${idx}`}>
+          <Fragment key={`${point}-${idx}`}>
             <div className="text-center flex-shrink-0">
               <div className={`text-2xl font-bold ${idx === 0 ? 'text-purple-600' : idx === uniquePoints.length - 1 ? 'text-green-600' : 'text-slate-700'}`}>
                 {point}
@@ -123,7 +123,7 @@ const RouteCard: React.FC<{ shipment: InternalShipment }> = ({ shipment }) => {
                 <Plane size={16} className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-purple-600 bg-white" />
               </div>
             )}
-          </React.Fragment>
+          </Fragment>
         ))}
       </div>
 
@@ -173,7 +173,7 @@ const RouteCard: React.FC<{ shipment: InternalShipment }> = ({ shipment }) => {
   );
 };
 
-export const FullScreenAwbView: React.FC<FullScreenAwbViewProps> = ({ 
+export const FullScreenAwbView: FunctionComponent<FullScreenAwbViewProps> = ({ 
   shipment, 
   onOpenModal, 
   onClose 

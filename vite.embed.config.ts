@@ -1,13 +1,13 @@
 import path from 'path';
 import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
+import preact from '@preact/preset-vite';
 
 /**
  * Configuración de Vite para compilar el Web Component embebible
  * Uso: npx vite build --config vite.embed.config.ts
  */
 export default defineConfig({
-  plugins: [react()],
+  plugins: [preact()],
   define: {
     // CRÍTICO: Reemplazar process.env.NODE_ENV para que funcione en el navegador
     'process.env.NODE_ENV': JSON.stringify('production'),
@@ -16,6 +16,9 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, '.'),
+      'react': 'preact/compat',
+      'react-dom': 'preact/compat',
+      'react/jsx-runtime': 'preact/jsx-runtime'
     }
   },
   build: {

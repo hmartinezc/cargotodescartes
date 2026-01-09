@@ -1,9 +1,10 @@
-import React, { useCallback, useDeferredValue, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'preact/hooks';
+import { FunctionComponent, JSX } from 'preact';
 import { mockShipments } from './mockData';
 import { InternalShipment, ShipmentStatus, TransmissionLog } from './types';
 import { ChampModal } from './components/ChampModal';
 import { TraxonSendResult } from './services/traxonApiClient';
-import { Plane, FileText, ArrowRight, CheckCircle, Clock, ShieldCheck, XCircle, Search, Wifi, Package, MapPin, Building, User, Scale, Layers, Send, ChevronRight } from 'lucide-react';
+import { Plane, FileText, ArrowRight, CheckCircle, Clock, ShieldCheck, XCircle, Search, Wifi, Package, MapPin, Building, User, Scale, Layers, Send, ChevronRight } from 'lucide-preact';
 
 // ============================================================
 // COMPONENTE: Vista de AWB Única (bonita, sin buscador)
@@ -11,10 +12,10 @@ import { Plane, FileText, ArrowRight, CheckCircle, Clock, ShieldCheck, XCircle, 
 interface SingleAwbViewProps {
   shipment: InternalShipment;
   onOpenModal: (shipment: InternalShipment) => void;
-  getStatusBadge: (status: ShipmentStatus) => React.ReactNode;
+  getStatusBadge: (status: ShipmentStatus) => JSX.Element;
 }
 
-const SingleAwbView: React.FC<SingleAwbViewProps> = ({ shipment, onOpenModal, getStatusBadge }) => {
+const SingleAwbView: FunctionComponent<SingleAwbViewProps> = ({ shipment, onOpenModal, getStatusBadge }) => {
   return (
     <div className="max-w-4xl mx-auto">
       {/* Header con número de guía destacado - Compacto */}
@@ -170,10 +171,10 @@ interface MultipleAwbViewProps {
   searchQuery: string;
   onSearchChange: (query: string) => void;
   onOpenModal: (shipment: InternalShipment) => void;
-  getStatusBadge: (status: ShipmentStatus) => React.ReactNode;
+  getStatusBadge: (status: ShipmentStatus) => JSX.Element;
 }
 
-const MultipleAwbView: React.FC<MultipleAwbViewProps> = ({ 
+const MultipleAwbView: FunctionComponent<MultipleAwbViewProps> = ({ 
   shipments, 
   searchQuery, 
   onSearchChange, 
@@ -285,7 +286,7 @@ const MultipleAwbView: React.FC<MultipleAwbViewProps> = ({
 // ============================================================
 // APP PRINCIPAL
 // ============================================================
-const App: React.FC = () => {
+const App: FunctionComponent = () => {
   // Initialize state with mock data to allow local updates
   // DEMO: Cambiar a mockShipments.slice(0, 1) para ver vista de 1 AWB
   // DEMO: Cambiar a mockShipments para ver vista de múltiples AWBs
@@ -297,7 +298,8 @@ const App: React.FC = () => {
   // Detectar si es una sola AWB o múltiples
   const isSingleAwbMode = shipments.length === 1;
 
-  const deferredSearchQuery = useDeferredValue(searchQuery);
+  // Preact no tiene useDeferredValue nativo, usamos searchQuery directamente
+  const deferredSearchQuery = searchQuery;
   const clearSelectionTimeoutRef = useRef<number | null>(null);
 
   const handleOpenModal = useCallback((shipment: InternalShipment) => {
