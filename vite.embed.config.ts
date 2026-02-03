@@ -24,12 +24,13 @@ export default defineConfig({
   build: {
     lib: {
       entry: path.resolve(__dirname, 'src/webcomponent.tsx'),
-      name: 'TraxonConnector',
+      name: 'CargoImpConnector',
       fileName: () => 'traxon-connector.js',
       formats: ['iife']
     },
     rollupOptions: {
       output: {
+        exports: 'named',  // Silencia warning, el WC se auto-registra via customElements.define
         inlineDynamicImports: true,
         manualChunks: undefined,
         entryFileNames: 'traxon-connector.js',

@@ -2,17 +2,28 @@
 import { FunctionComponent, JSX } from 'preact';
 import { 
   Settings, X, Plus, Trash2, AlertTriangle, CheckCircle2, 
-  Plane, Globe, Shield, Clock, ChevronDown, ChevronRight, Info, Radio
+  Plane, Globe, Shield, Clock, ChevronDown, ChevronRight, Info, Radio, Terminal, FileCode, Send
 } from 'lucide-preact';
 import { 
   ConnectorConfig, DEFAULT_CONNECTOR_CONFIG,
   AVAILABLE_SPH_CODES, AVAILABLE_OCI_CONTROL_INFO
 } from '../types';
-import { 
-  getApiConfig, ApiConfig, 
-  getTransmissionEnvironment, setTransmissionEnvironment, 
-  TransmissionEnvironment, PRODUCTION_CONFIG, UAT_CONFIG 
-} from '../services/traxonApiClient';
+import {
+  AirlinePolicy,
+  DEFAULT_AIRLINE_POLICIES,
+  FWB_SEGMENTS,
+  FHL_SEGMENTS,
+  FwbVersion,
+  FhlVersion,
+  TypeBPriority,
+  DEFAULT_TYPEB_CONFIG
+} from '../services/providers/cargoimp';
+import {
+  isTypeBEnabled,
+  setTypeBEnabled,
+  getTypeBConfig,
+  updateTypeBConfig
+} from '../services/runtimeConfigStore';
 
 // ============================================================
 // CONFIGURACIÓN EN MEMORIA (no persiste)
@@ -21,10 +32,27 @@ import {
 // Cuando se cierra el navegador o se recarga, vuelve a DEFAULT.
 let sessionConfig: ConnectorConfig = { ...DEFAULT_CONNECTOR_CONFIG };
 
+/**
+ * Resetea la configuración de sesión a los valores por defecto.
+ * Llamar cuando se cierra el modal de Champ completamente.
+ */
+export function resetSessionConfig(): void {
+  sessionConfig = { ...DEFAULT_CONNECTOR_CONFIG };
+}
+
+/**
+ * Obtiene la configuración de sesión actual (solo lectura)
+ */
+export function getSessionConfig(): ConnectorConfig {
+  return { ...sessionConfig };
+}
+
 interface ConfigPanelProps {
   isOpen: boolean;
   onClose: () => void;
   onConfigChange?: (config: ConnectorConfig) => void;
+  /** Callback cuando el usuario hace clic en "Guardar" - emite el JSON completo */
+  onSaveConfig?: (config: ConnectorConfig) => void;
 }
 
 // ============================================================
@@ -66,7 +94,7 @@ const CollapsibleSection: FunctionComponent<CollapsibleSectionProps> = ({ title,
 // COMPONENTE PRINCIPAL
 // ============================================================
 
-export const ConfigPanel: FunctionComponent<ConfigPanelProps> = ({ isOpen, onClose, onConfigChange }) => {
+export const ConfigPanel: FunctionComponent<ConfigPanelProps> = ({ isOpen, onClose, onConfigChange, onSaveConfig }) => {
   const [config, setConfig] = useState<ConnectorConfig>(() => ({ ...sessionConfig }));
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [newAirlineCode, setNewAirlineCode] = useState('');
@@ -75,31 +103,46 @@ export const ConfigPanel: FunctionComponent<ConfigPanelProps> = ({ isOpen, onClo
   const [newOciInfoIdentifier, setNewOciInfoIdentifier] = useState('AGT');
   const [newOciControlInfo, setNewOciControlInfo] = useState('RA');
   const [editingCountry, setEditingCountry] = useState<string | null>(null);
-  const [apiConfig, setApiConfig] = useState<ApiConfig | null>(null);
-  const [currentEnvironment, setCurrentEnvironment] = useState<TransmissionEnvironment>('PRODUCTION');
+  
+  // Estado local para Type B (para forzar re-render)
+  const [typeBEnabled, setTypeBEnabledLocal] = useState(() => isTypeBEnabled());
+  const [typeBConfig, setTypeBConfigLocal] = useState(() => getTypeBConfig());
+
+  // Wrapper para setTypeBEnabled que también actualiza el estado local
+  const handleTypeBToggle = useCallback((enabled: boolean) => {
+    setTypeBEnabled(enabled);
+    setTypeBEnabledLocal(enabled);
+    // Notificar cambio
+    if (onConfigChange) {
+      setTimeout(() => onConfigChange(sessionConfig), 0);
+    }
+  }, [onConfigChange]);
+
+  // Wrapper para updateTypeBConfig que también actualiza el estado local
+  const handleTypeBConfigUpdate = useCallback((updates: Partial<typeof typeBConfig>) => {
+    updateTypeBConfig(updates);
+    setTypeBConfigLocal(getTypeBConfig());
+    // Notificar cambio
+    if (onConfigChange) {
+      setTimeout(() => onConfigChange(sessionConfig), 0);
+    }
+  }, [onConfigChange]);
 
   // Cargar configuración al abrir (desde memoria de sesión, NO localStorage)
   useEffect(() => {
     if (isOpen) {
       // Cargar desde la variable en memoria (sessionConfig)
       setConfig({ ...sessionConfig });
+      // Cargar config Type B
+      setTypeBEnabledLocal(isTypeBEnabled());
+      setTypeBConfigLocal(getTypeBConfig());
       setSaveMessage(null);
-      const env = getTransmissionEnvironment();
-      setCurrentEnvironment(env);
-      setApiConfig(getApiConfig());
     }
   }, [isOpen]);
 
-  // Cambiar ambiente de transmisión (NO persiste, solo en memoria)
-  const handleEnvironmentChange = (env: TransmissionEnvironment) => {
-    setTransmissionEnvironment(env);
-    setCurrentEnvironment(env);
-    setApiConfig(getApiConfig());
-    setSaveMessage({ type: 'success', text: `Ambiente cambiado a ${env === 'PRODUCTION' ? 'Producción' : 'UAT (Pruebas)'}` });
-    setTimeout(() => setSaveMessage(null), 3000);
-  };
-
   // Actualizar config en memoria de sesión (NO persiste en localStorage)
+  // Los cambios se mantienen mientras el modal de Champ esté abierto.
+  // Al cerrar el modal de Champ, se resetea a defaults.
   const updateConfig = useCallback(<K extends keyof ConnectorConfig>(key: K, value: ConnectorConfig[K]) => {
     setConfig(prev => {
       const newConfig = { ...prev, [key]: value };
@@ -108,7 +151,14 @@ export const ConfigPanel: FunctionComponent<ConfigPanelProps> = ({ isOpen, onClo
       return newConfig;
     });
     setSaveMessage(null);
-  }, []);
+    
+    // Notificar al componente padre si hay callback
+    if (onConfigChange) {
+      setTimeout(() => {
+        onConfigChange(sessionConfig);
+      }, 0);
+    }
+  }, [onConfigChange]);
 
   // Agregar aerolínea
   const addAirline = () => {
@@ -217,141 +267,8 @@ export const ConfigPanel: FunctionComponent<ConfigPanelProps> = ({ isOpen, onClo
           )}
 
           {/* ============================================================ */}
-          {/* AMBIENTE DE TRANSMISIÓN */}
+          {/* INFORMACIÓN DE CONFIGURACIÓN EDI */}
           {/* ============================================================ */}
-          <div className="border-2 rounded-lg p-4 bg-slate-50 border-slate-300">
-            <div className="flex items-start gap-3">
-              <Radio className="mt-0.5 flex-shrink-0 text-purple-600" size={18} />
-              <div className="flex-1">
-                <div className="flex items-center justify-between mb-3">
-                  <p className="font-semibold text-slate-700">
-                    🌐 Ambiente de Transmisión
-                  </p>
-                  <span className={`text-xs font-bold px-3 py-1 rounded-full ${
-                    currentEnvironment === 'UAT' 
-                      ? 'bg-amber-500 text-white' 
-                      : 'bg-green-600 text-white'
-                  }`}>
-                    {currentEnvironment === 'UAT' ? '🧪 PRUEBAS (UAT)' : '🚀 PRODUCCIÓN'}
-                  </span>
-                </div>
-                
-                <p className="text-xs text-slate-500 mb-4">
-                  Selecciona el ambiente al que se enviarán los mensajes. <strong>Por defecto es Producción</strong>. 
-                  Usa UAT solo para pruebas. No se persiste, al cerrar vuelve a Producción.
-                </p>
-                
-                {/* Selector de Ambiente */}
-                <div className="grid grid-cols-2 gap-3 mb-4">
-                  {/* Opción Producción */}
-                  <button
-                    onClick={() => handleEnvironmentChange('PRODUCTION')}
-                    className={`p-4 rounded-lg border-2 text-left ${
-                      currentEnvironment === 'PRODUCTION'
-                        ? 'border-green-500 bg-green-50'
-                        : 'border-slate-200 bg-white hover:border-green-300'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                        currentEnvironment === 'PRODUCTION' 
-                          ? 'border-green-600 bg-green-600' 
-                          : 'border-slate-300'
-                      }`}>
-                        {currentEnvironment === 'PRODUCTION' && (
-                          <div className="w-2 h-2 bg-white rounded-full"></div>
-                        )}
-                      </div>
-                      <span className="font-bold text-green-700">🚀 Producción</span>
-                    </div>
-                    <div className="text-xs text-slate-600 space-y-1">
-                      <p className="font-mono text-[10px] bg-slate-100 px-2 py-1 rounded truncate">
-                        {PRODUCTION_CONFIG.endpoint.replace('https://', '')}
-                      </p>
-                      <p><span className="text-slate-400">Recipient:</span> <span className="font-mono">{PRODUCTION_CONFIG.recipientAddress}</span></p>
-                    </div>
-                  </button>
-                  
-                  {/* Opción UAT */}
-                  <button
-                    onClick={() => handleEnvironmentChange('UAT')}
-                    className={`p-4 rounded-lg border-2 text-left ${
-                      currentEnvironment === 'UAT'
-                        ? 'border-amber-500 bg-amber-50'
-                        : 'border-slate-200 bg-white hover:border-amber-300'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                        currentEnvironment === 'UAT' 
-                          ? 'border-amber-600 bg-amber-600' 
-                          : 'border-slate-300'
-                      }`}>
-                        {currentEnvironment === 'UAT' && (
-                          <div className="w-2 h-2 bg-white rounded-full"></div>
-                        )}
-                      </div>
-                      <span className="font-bold text-amber-700">🧪 UAT (Pruebas)</span>
-                    </div>
-                    <div className="text-xs text-slate-600 space-y-1">
-                      <p className="font-mono text-[10px] bg-slate-100 px-2 py-1 rounded truncate">
-                        {UAT_CONFIG.endpoint.replace('https://', '')}
-                      </p>
-                      <p><span className="text-slate-400">Recipient:</span> <span className="font-mono">{UAT_CONFIG.recipientAddress}</span></p>
-                    </div>
-                  </button>
-                </div>
-
-                {/* Información del ambiente seleccionado */}
-                <div className={`p-3 rounded-lg text-xs ${
-                  currentEnvironment === 'UAT' 
-                    ? 'bg-amber-100 border border-amber-300' 
-                    : 'bg-green-100 border border-green-300'
-                }`}>
-                  <p className="font-semibold mb-1">
-                    {currentEnvironment === 'UAT' ? '⚠️ Modo Pruebas Activo' : '✅ Modo Producción Activo'}
-                  </p>
-                  <p className="text-slate-600">
-                    {currentEnvironment === 'UAT' 
-                      ? `Los mensajes se enviarán a ${UAT_CONFIG.recipientAddress} (cuenta de pruebas). No afectan datos reales.`
-                      : 'Los mensajes se enviarán a las aerolíneas reales según el AWB.'
-                    }
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* ============================================================ */}
-          {/* DIRECCIONES PIMA - SOLO LECTURA */}
-          {/* ============================================================ */}
-          <div className="bg-slate-100 border border-slate-300 rounded-lg p-4">
-            <div className="flex items-start gap-3">
-              <Shield className="text-slate-600 mt-0.5 flex-shrink-0" size={18} />
-              <div className="flex-1">
-                <p className="font-semibold mb-3 text-slate-700">🔒 Direcciones PIMA (Solo Lectura)</p>
-                <p className="text-xs text-slate-500 mb-3">
-                  Estas direcciones son asignadas por CHAMP/Traxon y se usan en el messageHeader de cada envío.
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs text-slate-500 font-medium block mb-1">Sender Address (Agente)</label>
-                    <div className="bg-white border border-slate-200 rounded px-3 py-2 font-mono text-sm text-slate-700 select-all cursor-text">
-                      {apiConfig?.senderAddress || 'No configurado'}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-xs text-slate-500 font-medium block mb-1">Recipient Address (Aerolínea)</label>
-                    <div className="bg-white border border-slate-200 rounded px-3 py-2 font-mono text-sm text-slate-700 select-all cursor-text">
-                      {apiConfig?.recipientAddress || 'No configurado'}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Info sobre accountNumber */}
           <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
             <div className="flex items-start gap-3">
               <Info className="text-purple-600 mt-0.5 flex-shrink-0" size={18} />
@@ -364,6 +281,189 @@ export const ConfigPanel: FunctionComponent<ConfigPanelProps> = ({ isOpen, onClo
               </div>
             </div>
           </div>
+
+          {/* ============================================================ */}
+          {/* FORMATO DE MENSAJE - EDIFACT vs TYPE B */}
+          {/* ============================================================ */}
+          <CollapsibleSection 
+            title="Formato de Mensaje (Descartes)" 
+            icon={<Send size={18} />}
+            badge={typeBEnabled ? 'Type B' : 'EDIFACT'}
+            defaultOpen={true}
+          >
+            <div className="space-y-4">
+              <p className="text-sm text-slate-500 mb-4">
+                Selecciona el formato de envelope para los mensajes EDI. <strong>Type B</strong> es requerido para envío directo a Descartes.
+              </p>
+              
+              {/* Toggle EDIFACT vs Type B */}
+              <div className="grid grid-cols-2 gap-4">
+                {/* Opción EDIFACT */}
+                <button
+                  onClick={() => handleTypeBToggle(false)}
+                  className={`p-4 rounded-lg border-2 text-left transition-all ${
+                    !typeBEnabled 
+                      ? 'border-purple-500 bg-purple-50' 
+                      : 'border-slate-200 bg-white hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                      !typeBEnabled ? 'border-purple-500' : 'border-slate-300'
+                    }`}>
+                      {!typeBEnabled && <div className="w-2 h-2 bg-purple-500 rounded-full" />}
+                    </div>
+                    <span className={`font-semibold ${!typeBEnabled ? 'text-purple-700' : 'text-slate-700'}`}>
+                      EDIFACT (UNB/UNZ)
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Envelope EDIFACT estándar con segmentos UNB, UNH, UNT, UNZ
+                  </p>
+                  <div className="mt-2 text-xs font-mono bg-slate-100 p-2 rounded text-slate-600">
+                    UNB+IATA:1+SENDER...<br/>
+                    FWB/17<br/>
+                    ...<br/>
+                    'UNT+3+...'UNZ+1+...'
+                  </div>
+                </button>
+                
+                {/* Opción Type B */}
+                <button
+                  onClick={() => handleTypeBToggle(true)}
+                  className={`p-4 rounded-lg border-2 text-left transition-all ${
+                    typeBEnabled 
+                      ? 'border-sky-500 bg-sky-50' 
+                      : 'border-slate-200 bg-white hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                      typeBEnabled ? 'border-sky-500' : 'border-slate-300'
+                    }`}>
+                      {typeBEnabled && <div className="w-2 h-2 bg-sky-500 rounded-full" />}
+                    </div>
+                    <span className={`font-semibold ${typeBEnabled ? 'text-sky-700' : 'text-slate-700'}`}>
+                      Type B (Descartes)
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Formato IATA Type B para envío a Descartes GLN
+                  </p>
+                  <div className="mt-2 text-xs font-mono bg-slate-100 p-2 rounded text-slate-600">
+                    QK {typeBConfig.recipientAddress || 'DSGUNXA'}<br/>
+                    .{typeBConfig.senderPrefix || 'DSGTPXA'}{typeBConfig.includeTimestamp ? ' DDHHmm' : ''} {typeBConfig.originAddress || 'TDVAGT03OPERFLOR/BOG1'}<br/>
+                    FWB/17<br/>
+                    ...
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">
+                    DSGUNXA = Descartes Universal Header (enruta automáticamente)
+                  </p>
+                </button>
+              </div>
+
+              {/* Configuración Type B - Solo visible si está activo */}
+              {typeBEnabled && (
+                <div className="mt-4 p-4 bg-sky-50 border border-sky-200 rounded-lg space-y-3">
+                  <p className="text-sm font-semibold text-sky-800 flex items-center gap-2">
+                    <Send size={16} /> Configuración Type B
+                  </p>
+                  
+                  {/* Recipient Address (DSGUNXA) */}
+                  <div>
+                    <label className="text-xs text-sky-700 font-medium block mb-1">Recipient Address (Descartes)</label>
+                    <input
+                      type="text"
+                      value={typeBConfig.recipientAddress || 'DSGUNXA'}
+                      onChange={(e) => handleTypeBConfigUpdate({ recipientAddress: e.target.value })}
+                      className="w-full border border-sky-300 rounded px-3 py-2 text-sm font-mono bg-white"
+                      placeholder="DSGUNXA"
+                    />
+                    <p className="text-xs text-sky-600 mt-1">DSGUNXA = Descartes Universal Header (enruta automáticamente a la aerolínea)</p>
+                  </div>
+                  
+                  {/* Sender Prefix (DSGTPXA) */}
+                  <div>
+                    <label className="text-xs text-sky-700 font-medium block mb-1">Sender Prefix (Línea 2)</label>
+                    <input
+                      type="text"
+                      value={typeBConfig.senderPrefix || 'DSGTPXA'}
+                      onChange={(e) => handleTypeBConfigUpdate({ senderPrefix: e.target.value })}
+                      className="w-full border border-sky-300 rounded px-3 py-2 text-sm font-mono bg-white"
+                      placeholder="DSGTPXA"
+                    />
+                    <p className="text-xs text-sky-600 mt-1">Prefijo fijo de Descartes para la línea del sender</p>
+                  </div>
+                  
+                  {/* Origin Address */}
+                  <div>
+                    <label className="text-xs text-sky-700 font-medium block mb-1">Origin Address (Tu identificador)</label>
+                    <input
+                      type="text"
+                      value={typeBConfig.originAddress || 'TDVAGT03OPERFLOR/BOG1'}
+                      onChange={(e) => handleTypeBConfigUpdate({ originAddress: e.target.value })}
+                      className="w-full border border-sky-300 rounded px-3 py-2 text-sm font-mono bg-white"
+                      placeholder="TDVAGT03OPERFLOR/BOG1"
+                    />
+                    <p className="text-xs text-sky-600 mt-1">Tu identificador de agente (proporcionado por Descartes)</p>
+                  </div>
+                  
+                  {/* Timestamp toggle */}
+                  <div>
+                    <label className="text-xs text-sky-700 font-medium block mb-1">Timestamp en línea origen</label>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => handleTypeBConfigUpdate({ includeTimestamp: false })}
+                        className={`px-3 py-1.5 rounded text-sm transition-colors ${
+                          !typeBConfig.includeTimestamp
+                            ? 'bg-sky-600 text-white'
+                            : 'bg-white border border-sky-300 text-sky-700 hover:bg-sky-100'
+                        }`}
+                      >
+                        Sin timestamp
+                      </button>
+                      <button
+                        onClick={() => handleTypeBConfigUpdate({ includeTimestamp: true })}
+                        className={`px-3 py-1.5 rounded text-sm transition-colors ${
+                          typeBConfig.includeTimestamp
+                            ? 'bg-sky-600 text-white'
+                            : 'bg-white border border-sky-300 text-sky-700 hover:bg-sky-100'
+                        }`}
+                      >
+                        Con timestamp (DDHHmm)
+                      </button>
+                    </div>
+                    <p className="text-xs text-sky-600 mt-1">
+                      {typeBConfig.includeTimestamp 
+                        ? 'Ej: .DSGTPXA 031545 TDVAGT03OPERFLOR/BOG1' 
+                        : 'Ej: .DSGTPXA TDVAGT03OPERFLOR/BOG1'}
+                    </p>
+                  </div>
+                  
+                  {/* Priority */}
+                  <div>
+                    <label className="text-xs text-sky-700 font-medium block mb-1">Prioridad</label>
+                    <div className="flex gap-2">
+                      {(['QK', 'QD', 'QP', 'QU'] as TypeBPriority[]).map(priority => (
+                        <button
+                          key={priority}
+                          onClick={() => handleTypeBConfigUpdate({ defaultPriority: priority })}
+                          className={`px-3 py-1.5 rounded text-sm font-mono transition-colors ${
+                            typeBConfig.defaultPriority === priority
+                              ? 'bg-sky-600 text-white'
+                              : 'bg-white border border-sky-300 text-sky-700 hover:bg-sky-100'
+                          }`}
+                        >
+                          {priority}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-sky-600 mt-1">QK=Normal, QD=Deferred, QP=Priority, QU=Urgent</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </CollapsibleSection>
 
           {/* ============================================================ */}
           {/* SPH POR AEROLÍNEA */}
@@ -464,12 +564,19 @@ export const ConfigPanel: FunctionComponent<ConfigPanelProps> = ({ isOpen, onClo
                 <div className="grid grid-cols-4 gap-2 text-xs text-slate-500">
                   <span><strong>075</strong> = Iberia</span>
                   <span><strong>145</strong> = LATAM</span>
+                  <span><strong>985</strong> = LATAM Cargo</span>
                   <span><strong>074</strong> = KLM</span>
                   <span><strong>057</strong> = Air France</span>
                   <span><strong>020</strong> = Lufthansa</span>
-                  <span><strong>006</strong> = Delta</span>
-                  <span><strong>001</strong> = American</span>
                   <span><strong>205</strong> = Emirates</span>
+                  <span><strong>176</strong> = Emirates (alt)</span>
+                  <span><strong>235</strong> = Turkish</span>
+                  <span><strong>157</strong> = Qatar</span>
+                  <span><strong>045</strong> = Avianca</span>
+                  <span><strong>369</strong> = Atlas/Ethiopian</span>
+                  <span><strong>992</strong> = DHL Aviation</span>
+                  <span><strong>999</strong> = Polar/DHL</span>
+                  <span><strong>155</strong> = ABX Air</span>
                 </div>
               </div>
             </div>
@@ -860,6 +967,601 @@ ${config.securityOci?.regulatedAgentNumber ? `  { "isoCountryCode": "CO", "infor
           </CollapsibleSection>
 
           {/* ============================================================ */}
+          {/* CARGO-IMP (EDI) CONFIGURACIÓN */}
+          {/* ============================================================ */}
+          <CollapsibleSection 
+            title="CARGO-IMP (EDI) Configuración" 
+            icon={<Terminal size={18} />}
+            badge="Formato EDI"
+            defaultOpen={true}
+          >
+            <div className="space-y-4">
+              <p className="text-sm text-slate-500 mb-4">
+                Configura las versiones de mensaje y opciones para el formato CARGO-IMP (IATA CIMP EDI).
+              </p>
+
+              {/* Configuración Principal - Editable */}
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+                <p className="text-xs font-bold text-emerald-700 uppercase tracking-wide mb-3">⚙️ Configuración Global</p>
+                
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {/* Versión FWB */}
+                  <div>
+                    <label className="text-xs font-medium text-slate-700 block mb-1">Versión FWB</label>
+                    <select
+                      value={config.cargoImp?.fwbVersion || 'FWB/16'}
+                      onChange={(e) => updateConfig('cargoImp', { 
+                        ...config.cargoImp, 
+                        fwbVersion: e.currentTarget.value as 'FWB/16' | 'FWB/17' 
+                      })}
+                      className="w-full border border-emerald-300 rounded px-2 py-1.5 text-sm bg-white focus:ring-2 focus:ring-emerald-400"
+                    >
+                      <option value="FWB/16">FWB/16 (Estándar)</option>
+                      <option value="FWB/17">FWB/17 (Extendido)</option>
+                    </select>
+                  </div>
+                  
+                  {/* Versión FHL */}
+                  <div>
+                    <label className="text-xs font-medium text-slate-700 block mb-1">Versión FHL</label>
+                    <select
+                      value={config.cargoImp?.fhlVersion || 'FHL/4'}
+                      onChange={(e) => updateConfig('cargoImp', { 
+                        ...config.cargoImp, 
+                        fhlVersion: e.currentTarget.value as 'FHL/2' | 'FHL/4' 
+                      })}
+                      className="w-full border border-emerald-300 rounded px-2 py-1.5 text-sm bg-white focus:ring-2 focus:ring-emerald-400"
+                    >
+                      <option value="FHL/4">FHL/4 (Actual)</option>
+                      <option value="FHL/2">FHL/2 (Legacy)</option>
+                    </select>
+                  </div>
+                  
+                  {/* Toggle UNB/UNZ */}
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="cargoImpUNB"
+                      checked={config.cargoImp?.includeUNB_UNZ || false}
+                      onChange={(e) => updateConfig('cargoImp', { 
+                        ...config.cargoImp, 
+                        includeUNB_UNZ: e.currentTarget.checked 
+                      })}
+                      className="w-4 h-4 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-400"
+                    />
+                    <label htmlFor="cargoImpUNB" className="text-xs text-slate-700">
+                      Incluir UNB/UNZ<br/>
+                      <span className="text-[10px] text-slate-400">(EDIFACT wrapper)</span>
+                    </label>
+                  </div>
+                  
+                  {/* Toggle EORI */}
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="cargoImpEORI"
+                      checked={config.cargoImp?.ociWithEori || false}
+                      onChange={(e) => updateConfig('cargoImp', { 
+                        ...config.cargoImp, 
+                        ociWithEori: e.currentTarget.checked 
+                      })}
+                      className="w-4 h-4 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-400"
+                    />
+                    <label htmlFor="cargoImpEORI" className="text-xs text-slate-700">
+                      EORI en OCI<br/>
+                      <span className="text-[10px] text-slate-400">(Requerido UE)</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Códigos SPH por defecto */}
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                <p className="text-xs font-bold text-purple-700 uppercase tracking-wide mb-3">📦 Códigos SPH por defecto</p>
+                <div className="flex flex-wrap gap-2">
+                  {['EAP', 'ECC', 'PER', 'SPX', 'DGR', 'ICE', 'VAL', 'AVI', 'HEA'].map(code => (
+                    <label key={code} className="flex items-center gap-1.5 bg-white px-2 py-1 rounded border border-purple-200 cursor-pointer hover:bg-purple-100">
+                      <input
+                        type="checkbox"
+                        checked={(config.cargoImp?.defaultSphCodes || []).includes(code)}
+                        onChange={(e) => {
+                          const current = config.cargoImp?.defaultSphCodes || [];
+                          const updated = e.currentTarget.checked 
+                            ? [...current, code]
+                            : current.filter(c => c !== code);
+                          updateConfig('cargoImp', { ...config.cargoImp, defaultSphCodes: updated });
+                        }}
+                        className="w-3 h-3 rounded border-purple-300 text-purple-600"
+                      />
+                      <span className="text-xs font-mono text-purple-700">{code}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Políticas por Aerolínea - EDITABLE con políticas predefinidas */}
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs font-bold text-slate-700 uppercase tracking-wide">✈️ Políticas por Aerolínea (Pre-configuradas)</p>
+                  <button
+                    onClick={() => {
+                      // Sincronizar con políticas predefinidas (992=DHL, 999=Polar, etc.)
+                      updateConfig('cargoImp', { 
+                        ...config.cargoImp, 
+                        airlinePolicies: { ...DEFAULT_AIRLINE_POLICIES }
+                      });
+                    }}
+                    className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-200"
+                    title="Actualiza 992=DHL, 999=Polar Air, etc."
+                  >
+                    🔄 Sincronizar predefinidas
+                  </button>
+                </div>
+                <p className="text-xs text-slate-500 mb-3">
+                  Haz clic en una aerolínea para expandir y editar. Los segmentos son clickeables para activar/desactivar.
+                </p>
+                
+                {/* Combinar políticas guardadas con las predefinidas */}
+                <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                  {Object.entries({ ...DEFAULT_AIRLINE_POLICIES, ...(config.cargoImp?.airlinePolicies || {}) })
+                    .sort(([a], [b]) => {
+                      if (a === 'DEFAULT') return 1;
+                      if (b === 'DEFAULT') return -1;
+                      return a.localeCompare(b);
+                    })
+                    .map(([code, policy]) => {
+                      const allSegments = Object.keys(FWB_SEGMENTS);
+                      const policyCase = Math.floor((policy.policy || 20) / 10);
+                      
+                      return (
+                        <details key={code} className="group bg-white rounded-lg border border-slate-200 overflow-hidden">
+                          <summary className="flex items-center justify-between p-3 cursor-pointer hover:bg-slate-50">
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded w-12 text-center">{code}</span>
+                              <span className="text-xs text-slate-600">{policy.name || code}</span>
+                              <span className={`text-[10px] px-2 py-0.5 rounded ${
+                                policyCase === 7 ? 'bg-orange-100 text-orange-700' :
+                                policyCase === 5 ? 'bg-purple-100 text-purple-700' :
+                                policyCase === 4 ? 'bg-green-100 text-green-700' :
+                                'bg-blue-100 text-blue-700'
+                              }`}>
+                                Caso {policyCase}
+                              </span>
+                              <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">{policy.fwbVersion || 'FWB/16'}</span>
+                              <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{policy.fhlVersion || 'FHL/4'}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <ChevronRight size={14} className="text-slate-400 group-open:rotate-90 transition-transform" />
+                              {code !== 'DEFAULT' && (
+                                <button
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    const updated = { ...config.cargoImp?.airlinePolicies };
+                                    delete updated[code];
+                                    updateConfig('cargoImp', { ...config.cargoImp, airlinePolicies: updated });
+                                  }}
+                                  className="text-red-500 hover:text-red-700 p-1"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              )}
+                            </div>
+                          </summary>
+                          
+                          <div className="px-3 pb-3 border-t border-slate-100 pt-3 space-y-3">
+                            {/* Selector de Política/Caso */}
+                            <div className="p-2 bg-amber-50 rounded border border-amber-200">
+                              <label className="text-[10px] text-amber-700 font-bold block mb-1">🔧 Política de Caso</label>
+                              <select
+                                value={policy.policy || 20}
+                                onChange={(e) => {
+                                  const newPolicyValue = parseInt(e.currentTarget.value);
+                                  const allFwbSegs = Object.keys(FWB_SEGMENTS);
+                                  const allFhlSegs = Object.keys(FHL_SEGMENTS);
+                                  
+                                  // Segmentos base que siempre están habilitados
+                                  const baseEnabledFwb = ['FWB', 'AWB', 'RTG', 'SHP', 'CNE', 'AGT', 'CVD', 'ISU', 'FTR'];
+                                  const baseEnabledFhl = allFhlSegs; // FHL todos por defecto
+                                  
+                                  // Segmentos adicionales según el caso
+                                  let enabledFwbSegs = [...baseEnabledFwb];
+                                  let disabledFwbSegs: string[] = [];
+                                  let includeUnbUnz = true;
+                                  let fhlAlwaysWithHeader = false;
+                                  
+                                  // Configurar según el caso seleccionado
+                                  const caseNum = Math.floor(newPolicyValue / 10);
+                                  switch(caseNum) {
+                                    case 2: // Caso 2: Estándar
+                                      enabledFwbSegs = ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'];
+                                      disabledFwbSegs = allFwbSegs.filter(s => !enabledFwbSegs.includes(s));
+                                      break;
+                                    case 4: // Caso 4: FWB_NEW
+                                      enabledFwbSegs = ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'OTH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'];
+                                      disabledFwbSegs = allFwbSegs.filter(s => !enabledFwbSegs.includes(s));
+                                      break;
+                                    case 5: // Caso 5: FHL concatenados
+                                      enabledFwbSegs = ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'];
+                                      disabledFwbSegs = allFwbSegs.filter(s => !enabledFwbSegs.includes(s));
+                                      break;
+                                    case 7: // Caso 7: DHL/ABX
+                                      enabledFwbSegs = ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'NFY', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'];
+                                      disabledFwbSegs = allFwbSegs.filter(s => !enabledFwbSegs.includes(s));
+                                      fhlAlwaysWithHeader = true;
+                                      break;
+                                    case 8: // Caso 8: Todas FHL en 1
+                                      enabledFwbSegs = ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'ISU', 'SPH', 'OCI', 'FTR'];
+                                      disabledFwbSegs = allFwbSegs.filter(s => !enabledFwbSegs.includes(s));
+                                      break;
+                                  }
+                                  
+                                  const updated = {
+                                    ...(config.cargoImp?.airlinePolicies || {}),
+                                    [code]: { 
+                                      ...policy, 
+                                      policy: newPolicyValue,
+                                      enabledSegments: enabledFwbSegs,
+                                      disabledSegments: disabledFwbSegs,
+                                      enabledFhlSegments: baseEnabledFhl,
+                                      disabledFhlSegments: [],
+                                      includeUnbUnz,
+                                      fhlAlwaysWithHeader
+                                    }
+                                  };
+                                  updateConfig('cargoImp', { ...config.cargoImp, airlinePolicies: updated });
+                                  console.log(`[ConfigPanel] Caso cambiado a ${newPolicyValue} para ${code}, segmentos FWB: ${enabledFwbSegs.length} habilitados`);
+                                }}
+                                className="w-full border border-amber-300 rounded px-2 py-1 text-xs bg-white"
+                              >
+                                <optgroup label="📦 Consolidados">
+                                  <option value={20}>Caso 2: FWB + FHL individuales</option>
+                                  <option value={40}>Caso 4: FWB_NEW + FHL individuales</option>
+                                  <option value={50}>Caso 5: FWB_NEW + FHL concatenados</option>
+                                  <option value={70}>Caso 7: DHL/ABX (FHL con header)</option>
+                                  <option value={80}>Caso 8: Todas FHL en 1 mensaje</option>
+                                </optgroup>
+                                <optgroup label="📄 Directos">
+                                  <option value={21}>Caso 2: FWB directo</option>
+                                  <option value={41}>Caso 4: FWB_NEW directo</option>
+                                  <option value={71}>Caso 7: DHL/ABX directo</option>
+                                </optgroup>
+                              </select>
+                            </div>
+
+                            {/* Versiones y opciones */}
+                            <div className="grid grid-cols-4 gap-2">
+                              <div>
+                                <label className="text-[10px] text-slate-500 block mb-0.5">FWB</label>
+                                <select
+                                  value={policy.fwbVersion || 'FWB/16'}
+                                  onChange={(e) => {
+                                    const updated = {
+                                      ...(config.cargoImp?.airlinePolicies || {}),
+                                      [code]: { ...policy, fwbVersion: e.currentTarget.value as FwbVersion }
+                                    };
+                                    updateConfig('cargoImp', { ...config.cargoImp, airlinePolicies: updated });
+                                  }}
+                                  className="w-full border border-slate-300 rounded px-1 py-1 text-xs"
+                                >
+                                  <option value="FWB/16">FWB/16</option>
+                                  <option value="FWB/17">FWB/17</option>
+                                  <option value="FWB/9">FWB/9</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="text-[10px] text-slate-500 block mb-0.5">FHL</label>
+                                <select
+                                  value={policy.fhlVersion || 'FHL/4'}
+                                  onChange={(e) => {
+                                    const updated = {
+                                      ...(config.cargoImp?.airlinePolicies || {}),
+                                      [code]: { ...policy, fhlVersion: e.currentTarget.value as FhlVersion }
+                                    };
+                                    updateConfig('cargoImp', { ...config.cargoImp, airlinePolicies: updated });
+                                  }}
+                                  className="w-full border border-slate-300 rounded px-1 py-1 text-xs"
+                                >
+                                  <option value="FHL/4">FHL/4</option>
+                                  <option value="FHL/2">FHL/2</option>
+                                </select>
+                              </div>
+                              <label className="flex items-center gap-1 text-[10px] p-1 bg-slate-100 rounded">
+                                <input 
+                                  type="checkbox" 
+                                  checked={policy.includeUnbUnz !== false}
+                                  onChange={(e) => {
+                                    const updated = {
+                                      ...(config.cargoImp?.airlinePolicies || {}),
+                                      [code]: { ...policy, includeUnbUnz: e.currentTarget.checked }
+                                    };
+                                    updateConfig('cargoImp', { ...config.cargoImp, airlinePolicies: updated });
+                                  }}
+                                  className="w-3 h-3" 
+                                />
+                                UNB/UNZ
+                              </label>
+                              <label className="flex items-center gap-1 text-[10px] p-1 bg-slate-100 rounded">
+                                <input 
+                                  type="checkbox" 
+                                  checked={policy.ociFormat === 'withPrefix'}
+                                  onChange={(e) => {
+                                    const updated = {
+                                      ...(config.cargoImp?.airlinePolicies || {}),
+                                      [code]: { ...policy, ociFormat: e.currentTarget.checked ? 'withPrefix' : 'withoutPrefix' }
+                                    };
+                                    updateConfig('cargoImp', { ...config.cargoImp, airlinePolicies: updated });
+                                  }}
+                                  className="w-3 h-3" 
+                                />
+                                EORI
+                              </label>
+                            </div>
+                            
+                            {/* Segmentos - CLICKEABLES */}
+                            <div>
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="text-[10px] font-bold text-slate-700">📋 Segmentos (click para toggle):</label>
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => {
+                                      const updated = {
+                                        ...(config.cargoImp?.airlinePolicies || {}),
+                                        [code]: { ...policy, enabledSegments: [...allSegments], disabledSegments: [] }
+                                      };
+                                      updateConfig('cargoImp', { ...config.cargoImp, airlinePolicies: updated });
+                                    }}
+                                    className="text-[9px] text-green-600 hover:underline"
+                                  >
+                                    Todos
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      const minimal = ['FWB', 'AWB', 'SHP', 'CNE', 'CVD', 'ISU', 'FTR'];
+                                      const updated = {
+                                        ...(config.cargoImp?.airlinePolicies || {}),
+                                        [code]: { ...policy, enabledSegments: minimal, disabledSegments: allSegments.filter(s => !minimal.includes(s)) }
+                                      };
+                                      updateConfig('cargoImp', { ...config.cargoImp, airlinePolicies: updated });
+                                    }}
+                                    className="text-[9px] text-amber-600 hover:underline"
+                                  >
+                                    Mínimos
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-8 gap-1">
+                                {allSegments.map(seg => {
+                                  const isEnabled = (policy.enabledSegments || []).includes(seg);
+                                  return (
+                                    <button
+                                      key={seg}
+                                      onClick={() => {
+                                        const currentEnabled = policy.enabledSegments || allSegments;
+                                        const currentDisabled = policy.disabledSegments || [];
+                                        
+                                        let newEnabled: string[];
+                                        let newDisabled: string[];
+                                        
+                                        if (isEnabled) {
+                                          newEnabled = currentEnabled.filter(s => s !== seg);
+                                          newDisabled = [...currentDisabled, seg];
+                                        } else {
+                                          newEnabled = [...currentEnabled, seg];
+                                          newDisabled = currentDisabled.filter(s => s !== seg);
+                                        }
+                                        
+                                        const updated = {
+                                          ...(config.cargoImp?.airlinePolicies || {}),
+                                          [code]: { ...policy, enabledSegments: newEnabled, disabledSegments: newDisabled }
+                                        };
+                                        updateConfig('cargoImp', { ...config.cargoImp, airlinePolicies: updated });
+                                      }}
+                                      className={`p-1 rounded text-[9px] font-mono font-bold text-center transition-all ${
+                                        isEnabled 
+                                          ? 'bg-green-100 text-green-700 border border-green-300 hover:bg-green-200' 
+                                          : 'bg-red-50 text-red-400 border border-red-200 line-through hover:bg-red-100'
+                                      }`}
+                                      title={FWB_SEGMENTS[seg as keyof typeof FWB_SEGMENTS]?.name || seg}
+                                    >
+                                      {seg}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              <p className="text-[9px] text-slate-400 mt-1">
+                                ✓ {(policy.enabledSegments || []).length} activos | ✗ {(policy.disabledSegments || []).length} deshabilitados
+                              </p>
+                            </div>
+                            
+                            {/* Segmentos FHL - CLICKEABLES */}
+                            <div>
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="text-[10px] font-bold text-blue-700">📦 Segmentos FHL (Houses - click para toggle):</label>
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => {
+                                      const allFhlSegs = Object.keys(FHL_SEGMENTS);
+                                      const updated = {
+                                        ...(config.cargoImp?.airlinePolicies || {}),
+                                        [code]: { ...policy, enabledFhlSegments: [...allFhlSegs], disabledFhlSegments: [] }
+                                      };
+                                      updateConfig('cargoImp', { ...config.cargoImp, airlinePolicies: updated });
+                                    }}
+                                    className="text-[9px] text-blue-600 hover:underline"
+                                  >
+                                    Todos
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      const minimalFhl = ['FHL', 'MBI', 'HBS', 'SHP', 'CNE', 'CVD'];
+                                      const allFhlSegs = Object.keys(FHL_SEGMENTS);
+                                      const updated = {
+                                        ...(config.cargoImp?.airlinePolicies || {}),
+                                        [code]: { ...policy, enabledFhlSegments: minimalFhl, disabledFhlSegments: allFhlSegs.filter(s => !minimalFhl.includes(s)) }
+                                      };
+                                      updateConfig('cargoImp', { ...config.cargoImp, airlinePolicies: updated });
+                                    }}
+                                    className="text-[9px] text-amber-600 hover:underline"
+                                  >
+                                    Mínimos
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-5 gap-1">
+                                {Object.keys(FHL_SEGMENTS).map(seg => {
+                                  const allFhlSegs = Object.keys(FHL_SEGMENTS);
+                                  const enabledFhl = policy.enabledFhlSegments || allFhlSegs;
+                                  const isEnabled = enabledFhl.includes(seg);
+                                  return (
+                                    <button
+                                      key={seg}
+                                      onClick={() => {
+                                        const currentEnabled = policy.enabledFhlSegments || allFhlSegs;
+                                        const currentDisabled = policy.disabledFhlSegments || [];
+                                        
+                                        let newEnabled: string[];
+                                        let newDisabled: string[];
+                                        
+                                        if (isEnabled) {
+                                          newEnabled = currentEnabled.filter(s => s !== seg);
+                                          newDisabled = [...currentDisabled, seg];
+                                        } else {
+                                          newEnabled = [...currentEnabled, seg];
+                                          newDisabled = currentDisabled.filter(s => s !== seg);
+                                        }
+                                        
+                                        const updated = {
+                                          ...(config.cargoImp?.airlinePolicies || {}),
+                                          [code]: { ...policy, enabledFhlSegments: newEnabled, disabledFhlSegments: newDisabled }
+                                        };
+                                        updateConfig('cargoImp', { ...config.cargoImp, airlinePolicies: updated });
+                                      }}
+                                      className={`p-1 rounded text-[9px] font-mono font-bold text-center transition-all ${
+                                        isEnabled 
+                                          ? 'bg-blue-100 text-blue-700 border border-blue-300 hover:bg-blue-200' 
+                                          : 'bg-red-50 text-red-400 border border-red-200 line-through hover:bg-red-100'
+                                      }`}
+                                      title={FHL_SEGMENTS[seg as keyof typeof FHL_SEGMENTS]?.name || seg}
+                                    >
+                                      {seg}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              <p className="text-[9px] text-blue-400 mt-1">
+                                ✓ {(policy.enabledFhlSegments || Object.keys(FHL_SEGMENTS)).length} FHL activos
+                              </p>
+                            </div>
+                            
+                            {/* Notas */}
+                            {policy.notes && (
+                              <div className="bg-amber-50 border border-amber-200 rounded p-2">
+                                <p className="text-[10px] text-amber-700">
+                                  <Info size={10} className="inline mr-1" />
+                                  {policy.notes}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </details>
+                      );
+                    })}
+                </div>
+
+                {/* Agregar nueva política */}
+                <div className="mt-3 p-3 bg-emerald-50 rounded-lg border border-emerald-200">
+                  <p className="text-xs font-semibold text-emerald-700 mb-2">+ Agregar política de aerolínea</p>
+                  <div className="flex items-end gap-2 flex-wrap">
+                    <div>
+                      <label className="text-[10px] text-slate-500 block mb-0.5">Prefijo AWB</label>
+                      <input
+                        type="text"
+                        maxLength={3}
+                        placeholder="Ej: 075"
+                        value={newAirlineCode}
+                        onChange={(e) => setNewAirlineCode(e.currentTarget.value.replace(/\D/g, '').slice(0, 3))}
+                        className="w-16 border border-emerald-300 rounded px-2 py-1 text-xs font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-500 block mb-0.5">Nombre</label>
+                      <input
+                        type="text"
+                        placeholder="Ej: DHL"
+                        id="newPolicyName"
+                        className="w-24 border border-emerald-300 rounded px-2 py-1 text-xs"
+                      />
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (newAirlineCode && newAirlineCode.length === 3) {
+                          const nameInput = document.getElementById('newPolicyName') as HTMLInputElement;
+                          const allSegs = Object.keys(FWB_SEGMENTS);
+                          
+                          const updated = {
+                            ...(config.cargoImp?.airlinePolicies || {}),
+                            [newAirlineCode]: {
+                              awbPrefix: newAirlineCode,
+                              name: nameInput?.value || `Aerolínea ${newAirlineCode}`,
+                              policy: 21,
+                              fwbVersion: 'FWB/16' as FwbVersion,
+                              fhlVersion: 'FHL/4' as FhlVersion,
+                              includeUnbUnz: true,
+                              ociFormat: 'withPrefix',
+                              enabledSegments: allSegs,
+                              disabledSegments: [],
+                              defaultSphCodes: ['EAP']
+                            }
+                          };
+                          updateConfig('cargoImp', { ...config.cargoImp, airlinePolicies: updated });
+                          setNewAirlineCode('');
+                          if (nameInput) nameInput.value = '';
+                        }
+                      }}
+                      disabled={!newAirlineCode || newAirlineCode.length !== 3}
+                      className="bg-emerald-600 text-white px-3 py-1 rounded text-xs font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                    >
+                      <Plus size={12} /> Agregar
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Referencia de segmentos */}
+              <details className="mt-4">
+                <summary className="cursor-pointer text-sm text-slate-600 hover:text-slate-800 flex items-center gap-2 py-2 font-medium">
+                  <ChevronRight size={14}/> Ver referencia de segmentos FWB/FHL
+                </summary>
+                <div className="mt-2 p-3 bg-slate-100 rounded-lg">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs font-bold text-purple-700 mb-2">Segmentos FWB ({Object.keys(FWB_SEGMENTS).length})</p>
+                      <div className="flex flex-wrap gap-1">
+                        {Object.keys(FWB_SEGMENTS).map(seg => (
+                          <span key={seg} className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-mono">
+                            {seg}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-blue-700 mb-2">Segmentos FHL ({Object.keys(FHL_SEGMENTS).length})</p>
+                      <div className="flex flex-wrap gap-1">
+                        {Object.keys(FHL_SEGMENTS).map(seg => (
+                          <span key={seg} className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-mono">
+                            {seg}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </details>
+            </div>
+          </CollapsibleSection>
+
+          {/* ============================================================ */}
           {/* TIMEOUTS Y REINTENTOS */}
           {/* ============================================================ */}
           <CollapsibleSection 
@@ -896,13 +1598,29 @@ ${config.securityOci?.regulatedAgentNumber ? `  { "isoCountryCode": "CO", "infor
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-end">
-          <button
-            onClick={onClose}
-            className="bg-purple-600 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 flex items-center gap-2"
-          >
-            Cerrar
-          </button>
+        <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
+          <p className="text-xs text-slate-500">
+            Los cambios se aplican inmediatamente. Use "Guardar" para persistir en su sistema.
+          </p>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onClose}
+              className="bg-slate-200 text-slate-700 px-6 py-2 rounded-lg text-sm font-medium hover:bg-slate-300 flex items-center gap-2"
+            >
+              Cerrar
+            </button>
+            {onSaveConfig && (
+              <button
+                onClick={() => {
+                  onSaveConfig(config);
+                  setSaveMessage({ type: 'success', text: '✓ Configuración emitida para guardar' });
+                }}
+                className="bg-emerald-600 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700 flex items-center gap-2"
+              >
+                <CheckCircle2 size={16} /> Guardar
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

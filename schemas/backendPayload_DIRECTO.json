@@ -132,6 +132,37 @@
     }
   ],
 
+  "_comentario_alsoNotify": "Parte adicional a notificar (OPCIONAL). Se mapea a NFY en EDI, NotifyParty en XML",
+  "alsoNotify": {
+    "accountNumber": "NFY001",
+    "name": "FLOWER CUSTOMS BROKER INC",
+    "name2": "IMPORT CLEARANCE DEPARTMENT",
+    "address": {
+      "street": "1000 NW 25TH STREET",
+      "street2": "SUITE 100",
+      "place": "MIAMI",
+      "state": "FL",
+      "countryCode": "US",
+      "postalCode": "33122"
+    },
+    "contact": {
+      "identifier": "TE",
+      "number": "13059998877"
+    }
+  },
+
+  "_comentario_accounting": "Información contable (OPCIONAL). Se mapea a ACC en EDI, IncludedAccountingNote en XML",
+  "accounting": [
+    {
+      "identifier": "GeneralInformation",
+      "accountingInformation": "PAYMENT VIA WIRE TRANSFER"
+    },
+    {
+      "identifier": "ShippersReferenceNumber",
+      "accountingInformation": "PO-2025-001234"
+    }
+  ],
+
   "specialHandlingCodes": ["EAP", "PER"],
 
   "hasHouses": false,

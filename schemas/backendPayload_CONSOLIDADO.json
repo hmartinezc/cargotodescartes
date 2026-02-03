@@ -126,6 +126,30 @@
     }
   ],
 
+  "_comentario_alsoNotify": "Parte adicional a notificar (OPCIONAL). Se mapea a NFY en EDI, NotifyParty en XML",
+  "alsoNotify": {
+    "name": "CONSOLIDATED CUSTOMS BROKER",
+    "address": {
+      "street": "8000 NW 36TH STREET",
+      "place": "DORAL",
+      "state": "FL",
+      "countryCode": "US",
+      "postalCode": "33166"
+    },
+    "contact": {
+      "identifier": "TE",
+      "number": "13057776655"
+    }
+  },
+
+  "_comentario_accounting": "Información contable (OPCIONAL)",
+  "accounting": [
+    {
+      "identifier": "GeneralInformation",
+      "accountingInformation": "CONSOLIDATED SHIPMENT"
+    }
+  ],
+
   "specialHandlingCodes": ["EAP", "PER"],
 
   "hasHouses": true,

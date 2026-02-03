@@ -2,15 +2,35 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { FunctionComponent, JSX } from 'preact';
 import { memo } from 'preact/compat';
-import { InternalShipment, ShipmentStatus, Party, Agent, FlightSegment, OtherCharge, SecurityInfo, AVAILABLE_SPH_CODES, AVAILABLE_OCI_CONTROL_INFO, DEFAULT_SPH_BY_AIRLINE, loadConnectorConfig, ConnectorConfig, InternalHouseBill, HouseBill } from '../types';
-import { generateAirWayBillMessage, generateConsolidationListMessage, generateConsolidationListMessages, getAwbPrefix, getDefaultSphCodes, sanitizeGoodsDescription } from '../services/champService';
-import { sendCompleteShipment, UAT_CONFIG, TraxonSendResult, getTransmissionEnvironment, getApiConfig } from '../services/traxonApiClient';
+import { InternalShipment, ShipmentStatus, Party, Agent, FlightSegment, OtherCharge, SecurityInfo, AVAILABLE_SPH_CODES, AVAILABLE_OCI_CONTROL_INFO, DEFAULT_SPH_BY_AIRLINE, loadConnectorConfig, saveConnectorConfig, ConnectorConfig, InternalHouseBill, HouseBill, MessageProvider, MESSAGE_PROVIDER_INFO } from '../types';
+import { getAwbPrefix, getDefaultSphCodes, sanitizeGoodsDescription } from '../services/champService';
+import { cargoImpService } from '../services/providers';
+import { toggleFwbSegment, toggleFhlSegment, resetRuntimeConfig } from '../services/runtimeConfigStore';
+import { FwbSegmentType, FhlSegmentType, FHL_SEGMENTS } from '../services/providers/cargoimp/cargoImpTypes';
 import { 
-  X, Send, Plane, Users, ShieldCheck, Banknote, Layers, Info, MapPin, FileJson, Copy, Check, AlertTriangle, 
-  Building, User, Briefcase, Calendar, PenLine, Eye, Package, Scale, Clock, CheckCircle2, Loader2, Wifi, Plus, Trash2, Settings,
-  ChevronDown, ChevronRight, Code, FileText
+  DescartesTransmitService, 
+  BundleTransmissionResult,
+  TransmissionResult,
+  configureDescartesService,
+  isDescartesConfigured 
+} from '../services/descartesTransmitService';
+
+// Tipo para resultado de generación EDI (reemplaza TraxonSendResult)
+export interface CargoImpResult {
+  allSuccess: boolean;
+  summary: string;
+  fwbMessage?: string;
+  fhlMessages?: string[];
+  // Resultado de transmisión a Descartes (opcional)
+  transmissionResult?: BundleTransmissionResult;
+}
+import { 
+  X, Send, Plane, Users, ShieldCheck, Banknote, Layers, Info, MapPin, Copy, Check, AlertTriangle, 
+  Building, User, Briefcase, Calendar, PenLine, Eye, Package, Scale, Clock, CheckCircle2, Loader2, Plus, Trash2, Settings,
+  ChevronDown, ChevronRight, Terminal, Code, FileText, Upload
 } from 'lucide-preact';
-import { ConfigPanel } from './ConfigPanel';
+import { ConfigPanel, resetSessionConfig } from './ConfigPanel';
+import { CargoImpSegmentViewer } from './CargoImpSegmentViewer';
 
 // ============================================================
 // COMPONENTE OPTIMIZADO: House Row Colapsable (Memoizado)
@@ -335,7 +355,9 @@ interface ChampModalProps {
   onClose: () => void;
   shipment: InternalShipment | null;
   onSave?: (shipment: InternalShipment) => void;
-  onTransmitSuccess: (id: string, payload: string, traxonResult?: TraxonSendResult) => void;
+  onCopySuccess?: (id: string, ediContent: string) => void;
+  /** Callback cuando el usuario guarda la configuración - emite JSON completo para persistir en BD */
+  onSaveConfig?: (config: ConnectorConfig) => void;
 }
 
 type Tab = 'summary' | 'parties' | 'cargo' | 'financials' | 'security' | 'houses' | 'json';
@@ -658,27 +680,29 @@ const ExpandableJsonSection: FunctionComponent<ExpandableJsonSectionProps> = ({
 // COMPONENTE PRINCIPAL DEL MODAL
 // ============================================================
 
-export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose, shipment, onSave, onTransmitSuccess }) => {
+export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose, shipment, onSave, onCopySuccess, onSaveConfig }) => {
   const [activeTab, setActiveTab] = useState<Tab>('parties');
   const [activeJsonTab, setActiveJsonTab] = useState<JsonSubTab>('fwb');
   const [formData, setFormData] = useState<InternalShipment | null>(null);
   const [copied, setCopied] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [isSending, setIsSending] = useState(false);
-  const [sendResult, setSendResult] = useState<TraxonSendResult | null>(null);
+  const [sendResult, setSendResult] = useState<CargoImpResult | null>(null);
   const [sendMode, setSendMode] = useState<'masterOnly' | 'masterAndHouses'>('masterAndHouses');
   const [activeParty, setActiveParty] = useState<'shipper' | 'consignee'>('shipper');
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [connectorConfig, setConnectorConfig] = useState<ConnectorConfig>(() => loadConnectorConfig());
   
-  // Estado para trackear el ambiente actual (para forzar re-render del JSON cuando cambie)
-  const [currentEnv, setCurrentEnv] = useState(() => getTransmissionEnvironment());
+  // Contador para forzar re-render cuando cambia la configuración runtime
+  const [configVersion, setConfigVersion] = useState(0);
+  
+  // Proveedor fijo: CARGO_IMP (EDI)
+  const selectedProvider: MessageProvider = 'CARGO_IMP';
   
   // Estado para houses expandidos - Set para O(1) lookup
   const [expandedHouses, setExpandedHouses] = useState<Set<number>>(new Set());
 
   const copyTimeoutRef = useRef<number | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
   const isMountedRef = useRef(true);
 
   // Determinar si es editable (solo en DRAFT)
@@ -698,6 +722,21 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
     });
   }, []);
 
+  // Handler para cerrar el modal completo
+  // Resetea todas las configuraciones temporales (runtimeConfigStore y sessionConfig)
+  // Los cambios hechos en el Tab EDI son efímeros y no persisten
+  // Los cambios en ConfigPanel también se pierden al cerrar (en el futuro se guardarán en backend)
+  const handleCloseModal = useCallback(() => {
+    // Resetear configuración runtime (cambios del Tab EDI)
+    resetRuntimeConfig();
+    // Resetear configuración de sesión (cambios del ConfigPanel)
+    resetSessionConfig();
+    // Resetear el contador de versión
+    setConfigVersion(0);
+    // Llamar al onClose original
+    onClose();
+  }, [onClose]);
+
   // Handler para actualizar un house específico (memoizado)
   const updateHouse = useCallback((index: number, updatedHouse: InternalHouseBill) => {
     setFormData(prev => {
@@ -716,7 +755,6 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
         window.clearTimeout(copyTimeoutRef.current);
         copyTimeoutRef.current = null;
       }
-      abortRef.current?.abort();
     };
   }, []);
 
@@ -734,46 +772,74 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
     }
   }, [shipment]);
 
-  const buildPayloadsForJson = useCallback((data: InternalShipment, jsonTab: JsonSubTab) => {
-    const fwb = generateAirWayBillMessage(data);
-    if (!data.hasHouses || jsonTab === 'fwb') {
-      return { fwb, fhl: null as any };
-    }
-    // Para consolidados, solo generamos AWB + CSL
-    // El CSL contiene houseWaybillSummaries con toda la info de las houses
-    // Los FHL individuales ya NO se envían según Traxon EMA
-    const fhl = generateConsolidationListMessage(data);
-    return { fwb, fhl };
-  }, []);
-
-  const buildPayloadsForSend = useCallback((data: InternalShipment, mode: 'masterOnly' | 'masterAndHouses') => {
-    const fwb = generateAirWayBillMessage(data);
-    const shouldSendConsolidation = data.hasHouses && mode === 'masterAndHouses';
-    if (!shouldSendConsolidation) {
-      return { fwb, cslMessages: [] as any[] };
-    }
-    // Para consolidados: AWB + múltiples CSL (uno por house)
-    // Según Traxon: cada house se envía en un mensaje CSL separado
-    const cslMessages = generateConsolidationListMessages(data);
-    return { fwb, cslMessages };
-  }, []);
-
-  // Generación de JSON SOLO cuando se está viendo el tab JSON (evita trabajo pesado por cada tecla)
-  // IMPORTANTE: currentEnv como dependencia para regenerar cuando cambie el ambiente UAT/PROD
-  const generationResult = useMemo(() => {
-    if (!formData) return { payloads: null, error: null };
-    if (activeTab !== 'json') return { payloads: null, error: null };
+  // ============================================================
+  // MEMO: Generación EDI para CARGO-IMP
+  // Dependencias: configVersion para forzar re-generación cuando se toggle un segmento
+  // ============================================================
+  const cargoImpGenerationResult = useMemo(() => {
+    if (!formData) return { fwbMessage: null, fhlMessages: null, concatenatedFhl: null, policyInfo: null, error: null };
+    if (activeTab !== 'json') return { fwbMessage: null, fhlMessages: null, concatenatedFhl: null, policyInfo: null, error: null };
+    
     try {
-      // Log para debug: mostrar qué ambiente se está usando
-      console.log(`[JSON Generation] Ambiente actual: ${currentEnv}`);
-      const payloads = buildPayloadsForJson(formData, activeJsonTab);
-      return { payloads, error: null };
+      // Obtener información de la política que se usará
+      const awbPrefix = formData.awbNumber?.split('-')[0] || '000';
+      const policyInfo = cargoImpService.getPolicyInfo(awbPrefix);
+      
+      // Log para debug de toggles
+      console.log(`[CARGO-IMP] Regenerando (v${configVersion}) con política: ${policyInfo.airlineName}, segmentos habilitados: ${policyInfo.policy.enabledSegments?.length || 0}`);
+      
+      // Generar FWB (usa política basada en prefijo AWB internamente)
+      const fwbMessage = cargoImpService.generateFWB(formData);
+      
+      // Generar FHL si es consolidado
+      let fhlMessages: any[] = [];
+      let concatenatedFhl: string = '';
+      if (formData.hasHouses && formData.houseBills.length > 0) {
+        // Generar mensajes FHL individuales para visualización
+        fhlMessages = formData.houseBills.map(house => 
+          cargoImpService.generateFHL(formData, house)
+        );
+        // Generar versión concatenada para copiar
+        concatenatedFhl = cargoImpService.generateConcatenatedFHL(formData);
+      }
+      
+      return { 
+        fwbMessage, 
+        fhlMessages: fhlMessages.length > 0 ? fhlMessages : null,
+        concatenatedFhl,
+        policyInfo,
+        error: null 
+      };
     } catch (e: any) {
-      return { payloads: null, error: e.message || 'Error desconocido en generación' };
+      console.error('[CARGO-IMP Generation Error]', e);
+      return { fwbMessage: null, fhlMessages: null, concatenatedFhl: null, policyInfo: null, error: e.message || 'Error generando EDI' };
     }
-  }, [activeJsonTab, activeTab, buildPayloadsForJson, formData, currentEnv]);
+  }, [activeTab, formData, selectedProvider, configVersion]);
 
-  const { payloads, error: genError } = generationResult;
+  const { fwbMessage: cargoImpFwb, fhlMessages: cargoImpFhl, concatenatedFhl: cargoImpConcatFhl, policyInfo: cargoImpPolicyInfo, error: cargoImpGenError } = cargoImpGenerationResult;
+
+  // Handler para toggle de segmentos desde el visor EDI
+  // Usa el RuntimeConfigStore (en memoria, sin localStorage)
+  const handleCargoImpToggleSegment = useCallback((segmentCode: string, enabled: boolean) => {
+    if (!formData?.awbNumber) return;
+    
+    const awbPrefix = formData.awbNumber.split('-')[0] || '000';
+    
+    // Segmentos FHL conocidos
+    const fhlSegmentCodes = Object.keys(FHL_SEGMENTS);
+    const isFhlSegment = fhlSegmentCodes.includes(segmentCode);
+    
+    if (isFhlSegment) {
+      toggleFhlSegment(awbPrefix, segmentCode as FhlSegmentType, enabled);
+    } else {
+      toggleFwbSegment(awbPrefix, segmentCode as FwbSegmentType, enabled);
+    }
+    
+    // Forzar re-render incrementando un contador
+    setConfigVersion(v => v + 1);
+    
+    console.log(`[CARGO-IMP] Toggle segmento ${isFhlSegment ? 'FHL' : 'FWB'} ${segmentCode} -> ${enabled ? 'HABILITADO' : 'DESHABILITADO'} para ${awbPrefix}`);
+  }, [formData]);
 
   // Validación de datos requeridos
   const validateData = (): string[] => {
@@ -805,102 +871,113 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
     if (formData.pieces <= 0) errors.push('Cantidad de piezas debe ser mayor a 0');
     if (formData.weight <= 0) errors.push('Peso debe ser mayor a 0');
 
-    // Routing (OBLIGATORIO en PRODUCCIÓN)
-    // En PRODUCCIÓN, el backend DEBE enviar routing.recipientAddress (dirección PIMA de la aerolínea)
-    const currentEnv = getTransmissionEnvironment();
-    if (currentEnv === 'PRODUCTION') {
-      if (!formData.routing?.recipientAddress) {
-        errors.push('PRODUCCIÓN: routing.recipientAddress es obligatorio. El backend debe enviar la dirección PIMA de destino (ej: TDVAIR08DHV)');
-      }
-    }
-
     return errors;
   };
 
-  // Función de envío REAL a Traxon UAT
-  const handleTransmit = async () => {
-    const errors = validateData();
-    if (errors.length > 0) {
-      setValidationErrors(errors);
-      return;
+  // Función para copiar mensajes EDI generados
+  const handleCopyEdi = useCallback(() => {
+    if (!cargoImpFwb?.fullMessage) return;
+    
+    let textToCopy = cargoImpFwb.fullMessage;
+    
+    // Si es consolidado y se quieren todos los mensajes
+    if (formData?.hasHouses && sendMode === 'masterAndHouses' && cargoImpConcatFhl) {
+      textToCopy = cargoImpFwb.fullMessage + '\n\n' + cargoImpConcatFhl;
     }
-    setValidationErrors([]);
+    
+    copyToClipboard(textToCopy);
+    
+    const result: CargoImpResult = {
+      allSuccess: true,
+      summary: `✅ Mensaje EDI copiado al clipboard. FWB${formData?.hasHouses ? ` + ${formData.houseBills.length} FHL` : ''}.`,
+      fwbMessage: cargoImpFwb.fullMessage,
+      fhlMessages: cargoImpFhl?.map(f => f.fullMessage)
+    };
+    
+    setSendResult(result);
+    
+    // Notificar al componente padre
+    if (formData && onCopySuccess) {
+      onCopySuccess(formData.id, textToCopy);
+    }
+  }, [cargoImpFwb, cargoImpConcatFhl, cargoImpFhl, formData, sendMode, onCopySuccess]);
 
-    if (!formData) return;
+  // Estado para transmisión a Descartes
+  const [isTransmitting, setIsTransmitting] = useState(false);
+  const [transmitSuccess, setTransmitSuccess] = useState(false);
 
-    // Cancelar envío anterior si existiera
-    abortRef.current?.abort();
-    abortRef.current = new AbortController();
+  // Verificar si hay configuración de Descartes disponible
+  const hasDescartesConfig = useMemo(() => {
+    return !!(formData?.descartesConfig?.endpoint && 
+              formData?.descartesConfig?.username && 
+              formData?.descartesConfig?.password);
+  }, [formData?.descartesConfig]);
 
-    // Iniciar envío
-    setIsSending(true);
+  // Función para transmitir a Descartes
+  const handleTransmitToDescartes = useCallback(async () => {
+    if (!cargoImpFwb?.fullMessage || !formData?.descartesConfig) return;
+
+    setIsTransmitting(true);
+    setTransmitSuccess(false);
     setSendResult(null);
 
     try {
-      // Obtener configuración actual según el ambiente seleccionado
-      const apiConfigForSend = getApiConfig();
-      const envForSend = getTransmissionEnvironment();
+      // Configurar el servicio con las credenciales del shipment
+      const service = new DescartesTransmitService({
+        endpoint: formData.descartesConfig.endpoint,
+        username: formData.descartesConfig.username,
+        password: formData.descartesConfig.password
+      });
+
+      // Preparar mensajes
+      const fwbMessage = cargoImpFwb.fullMessage;
+      const awbNumber = formData.awbNumber;
       
-      console.log('═══════════════════════════════════════════════════════════');
-      console.log(`🚀 INICIANDO ENVÍO A TRAXON - AMBIENTE: ${envForSend}`);
-      console.log('═══════════════════════════════════════════════════════════');
-      console.log(`🌐 Endpoint: ${apiConfigForSend.endpoint}`);
-      console.log(`📍 Recipient PIMA: ${apiConfigForSend.recipientAddress}`);
-      console.log(`📎 AWB: ${formData.awbNumber}`);
-      console.log(`📦 Tiene Houses: ${formData.hasHouses ? 'Sí (' + formData.houseBills.length + ')' : 'No'}`);
-      console.log(`📨 Modo de envío: ${sendMode === 'masterOnly' ? 'Solo Master' : 'Master + CSL (consolidado)'}`);
-      console.log(`ℹ️ En UAT los mensajes van a: ${UAT_CONFIG.recipientAddress}`);
-      console.log(`ℹ️ En PROD los mensajes irían a: ${formData.routing?.recipientAddress || 'NO DEFINIDO'}`);
-      console.log(`ℹ️ NOTA: FHL individuales ya NO se envían - CSL contiene houseWaybillSummaries`);
-      console.log('═══════════════════════════════════════════════════════════');
+      // Preparar FHLs si es consolidado y se quieren todos
+      let fhlMessages: string[] = [];
+      let hawbNumbers: string[] = [];
+      
+      if (formData.hasHouses && sendMode === 'masterAndHouses' && cargoImpFhl) {
+        fhlMessages = cargoImpFhl.map(f => f.fullMessage);
+        hawbNumbers = formData.houseBills.map(h => h.hawbNumber);
+      }
 
-      // Preparar payloads exactamente necesarios para el modo seleccionado
-      const payloadBundle = buildPayloadsForSend(formData, sendMode);
-      const shouldSendConsolidation = formData.hasHouses && sendMode === 'masterAndHouses';
-
-      // Enviar al endpoint real (AWB + múltiples CSL si es consolidado)
-      // Según Traxon: cada house se envía en un mensaje CSL separado
-      const result = await sendCompleteShipment(
-        payloadBundle.fwb,                                      // AWB siempre
-        shouldSendConsolidation ? payloadBundle.cslMessages : undefined, // Array de CSL
-        undefined, // FHLs ya NO se envían - el CSL contiene houseWaybillSummaries
-        { signal: abortRef.current.signal }
+      // Transmitir bundle (FWB + FHLs)
+      const transmissionResult = await service.sendBundle(
+        fwbMessage,
+        awbNumber,
+        fhlMessages,
+        hawbNumbers
       );
 
-      if (isMountedRef.current) {
-        setSendResult(result);
+      // Crear resultado
+      const result: CargoImpResult = {
+        allSuccess: transmissionResult.allSuccess,
+        summary: transmissionResult.summary,
+        fwbMessage: fwbMessage,
+        fhlMessages: fhlMessages.length > 0 ? fhlMessages : undefined,
+        transmissionResult
+      };
+
+      setSendResult(result);
+      setTransmitSuccess(transmissionResult.allSuccess);
+
+      // Notificar al componente padre si fue exitoso
+      if (transmissionResult.allSuccess && onCopySuccess) {
+        onCopySuccess(formData.id, `TRANSMITTED: ${awbNumber}`);
       }
 
-      console.log('═══════════════════════════════════════════════════════════');
-      console.log(`📊 RESULTADO: ${result.allSuccess ? '✅ ÉXITO' : '❌ CON ERRORES'}`);
-      console.log(`📋 Resumen: ${result.summary}`);
-      console.log('═══════════════════════════════════════════════════════════');
-
-      // Notificar al componente padre
-      onTransmitSuccess(
-        formData.id,
-        JSON.stringify({ fwb: payloadBundle.fwb, cslMessages: payloadBundle.cslMessages }),
-        result
-      );
-
-    } catch (error: any) {
-      if (error?.name === 'AbortError') {
-        // Si se cerró el modal o se lanzó un nuevo envío, no mostramos error.
-        return;
-      }
-      console.error('❌ Error en envío:', error);
-      if (isMountedRef.current) {
-        setSendResult({
-          allSuccess: false,
-          summary: `Error: ${error.message}`
-        });
-      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+      setSendResult({
+        allSuccess: false,
+        summary: `❌ Error de transmisión: ${errorMessage}`,
+        fwbMessage: cargoImpFwb.fullMessage
+      });
     } finally {
-      if (isMountedRef.current) {
-        setIsSending(false);
-      }
+      setIsTransmitting(false);
     }
-  };
+  }, [cargoImpFwb, cargoImpFhl, formData, sendMode, onCopySuccess]);
 
   const copyToClipboard = useCallback((text: string) => {
     navigator.clipboard.writeText(text);
@@ -941,7 +1018,7 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
     { id: 'security', icon: ShieldCheck, label: 'Seguridad' },
     { id: 'houses', icon: Layers, label: formData.hasHouses ? `Houses (${formData.houseBills.length})` : 'Houses' },
     { id: 'summary', icon: Eye, label: 'Resumen' },
-    { id: 'json', icon: FileJson, label: 'JSON' },
+    { id: 'json', icon: Terminal, label: 'EDI' },
   ];
 
   return (
@@ -994,7 +1071,7 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
             >
               <Settings size={20} />
             </button>
-            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-2 rounded-lg transition-colors">
+            <button onClick={handleCloseModal} className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-2 rounded-lg transition-colors">
               <X size={20} />
             </button>
           </div>
@@ -1231,29 +1308,12 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
 
               {/* Botón de Acción Rápida */}
               {isEditable && (
-                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-bold text-purple-800">¿Listo para enviar?</p>
-                      <div className="flex items-center gap-2">
-                        <Wifi size={14} className="text-purple-600" />
-                        <p className="text-sm text-purple-600">
-                          Ambiente: <span className={`font-bold ${currentEnv === 'UAT' ? 'text-amber-600' : 'text-green-600'}`}>
-                            {currentEnv === 'UAT' ? '🧪 UAT (Pruebas)' : '🚀 PRODUCCIÓN'}
-                          </span>
-                        </p>
-                      </div>
-                      {/* Advertencia si falta routing en PRODUCCIÓN */}
-                      {currentEnv === 'PRODUCTION' && !formData.routing?.recipientAddress && (
-                        <div className="mt-2 p-2 bg-red-100 border border-red-300 rounded text-xs text-red-700">
-                          <strong>⚠️ FALTA:</strong> routing.recipientAddress no viene del backend. 
-                          El JSON debe incluir: <code className="bg-white px-1 rounded">{`"routing": { "recipientAddress": "XXXAIR08XXX" }`}</code>
-                        </div>
-                      )}
-                      {/* Mostrar routing actual - en UAT siempre mostrar la dirección de pruebas */}
-                      <p className="text-xs text-slate-500 mt-1 font-mono">
-                        📍 Destino PIMA: {currentEnv === 'UAT' ? UAT_CONFIG.recipientAddress : (formData.routing?.recipientAddress || 'No configurado')}
-                        {currentEnv === 'UAT' && <span className="text-amber-600 ml-2">(Pruebas)</span>}
+                      <p className="font-bold text-emerald-800">📟 Generador CARGO-IMP (EDI)</p>
+                      <p className="text-sm text-emerald-600">
+                        Formato: FWB/16, FWB/17, FHL/4
                       </p>
                       {formData.hasHouses && (
                         <p className="text-xs text-purple-500 mt-1">Consolidado: Master + {formData.houseBills.length} House(s)</p>
@@ -1266,44 +1326,57 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
                       {/* Selector de modo de envío para consolidados */}
                       {formData.hasHouses && (
                         <div className="flex flex-col items-end">
-                          <label className="text-[10px] text-purple-600 uppercase font-bold mb-1">Modo de envío</label>
+                          <label className="text-[10px] text-purple-600 uppercase font-bold mb-1">Contenido</label>
                           <select 
                             value={sendMode} 
                             onChange={(e) => setSendMode(e.target.value as 'masterOnly' | 'masterAndHouses')}
                             className="text-sm border border-purple-300 rounded px-3 py-2 focus:ring-2 focus:ring-purple-500 outline-none bg-white"
                           >
-                            <option value="masterAndHouses">Master + {formData.houseBills.length} Houses</option>
-                            <option value="masterOnly">Solo Master (FWB)</option>
+                            <option value="masterAndHouses">FWB + {formData.houseBills.length} FHL</option>
+                            <option value="masterOnly">Solo FWB (Master)</option>
                           </select>
                         </div>
                       )}
-                      {/* Botón deshabilitado si: está enviando O (está en PROD y falta recipientAddress) */}
-                      {(() => {
-                        const missingRecipientInProd = currentEnv === 'PRODUCTION' && !formData.routing?.recipientAddress;
-                        const isDisabled = isSending || missingRecipientInProd;
-                        return (
-                          <button 
-                            onClick={handleTransmit}
-                            disabled={isDisabled}
-                            title={missingRecipientInProd ? 'No se puede enviar: falta recipientAddress del backend' : ''}
-                            className={`${isDisabled ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'} text-white px-6 py-3 rounded-lg flex items-center gap-2 font-bold transition-all shadow-lg hover:shadow-xl`}
-                          >
-                            {isSending ? (
-                              <>
-                                <Loader2 size={18} className="animate-spin" /> Enviando...
-                              </>
-                            ) : missingRecipientInProd ? (
-                              <>
-                                <AlertTriangle size={18} /> Sin destino PIMA
-                              </>
-                            ) : (
-                              <>
-                                <Send size={18} /> Transmitir a Traxon {currentEnv === 'UAT' ? 'UAT' : 'PROD'}
-                              </>
-                            )}
-                          </button>
-                        );
-                      })()}
+                      
+                      {/* Botón para copiar EDI */}
+                      <button 
+                        onClick={handleCopyEdi}
+                        disabled={!cargoImpFwb?.fullMessage || isTransmitting}
+                        className="bg-slate-600 hover:bg-slate-700 disabled:bg-gray-400 text-white px-4 py-3 rounded-lg flex items-center gap-2 font-medium transition-all shadow-md hover:shadow-lg"
+                      >
+                        {copied ? (
+                          <>
+                            <Check size={18} /> ¡Copiado!
+                          </>
+                        ) : (
+                          <>
+                            <Copy size={18} /> Copiar EDI
+                          </>
+                        )}
+                      </button>
+
+                      {/* Botón para transmitir a Descartes (solo si hay configuración) */}
+                      {hasDescartesConfig && (
+                        <button 
+                          onClick={handleTransmitToDescartes}
+                          disabled={!cargoImpFwb?.fullMessage || isTransmitting}
+                          className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-6 py-3 rounded-lg flex items-center gap-2 font-bold transition-all shadow-lg hover:shadow-xl"
+                        >
+                          {isTransmitting ? (
+                            <>
+                              <Loader2 size={18} className="animate-spin" /> Transmitiendo...
+                            </>
+                          ) : transmitSuccess ? (
+                            <>
+                              <CheckCircle2 size={18} /> ¡Transmitido!
+                            </>
+                          ) : (
+                            <>
+                              <Upload size={18} /> Transmitir a Descartes
+                            </>
+                          )}
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -1323,7 +1396,10 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
                           <AlertTriangle size={24} className="text-red-600 animate-bounce" />
                         )}
                         <span className={`font-bold text-lg ${sendResult.allSuccess ? 'text-green-700' : 'text-red-700'}`}>
-                          {sendResult.allSuccess ? '✅ ENVÍO EXITOSO' : '❌ ENVÍO CON ERRORES'}
+                          {sendResult.transmissionResult 
+                            ? (sendResult.allSuccess ? '✅ TRANSMITIDO' : '❌ ERROR TRANSMISIÓN')
+                            : (sendResult.allSuccess ? '✅ EDI COPIADO' : '❌ ERROR')
+                          }
                         </span>
                       </div>
                       {/* Resumen grande y llamativo */}
@@ -1334,28 +1410,96 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
                       }`}>
                         📊 {sendResult.summary}
                       </div>
-                      {sendResult.awbMessage && (
-                        <div className="mt-2 text-xs font-mono bg-white/70 p-2 rounded border border-slate-200">
-                          <p><strong>AWB:</strong> Status {sendResult.awbMessage.statusCode} - {sendResult.awbMessage.message}</p>
-                          {sendResult.awbMessage.rawResponse && (
-                            <p className="text-slate-500 truncate">Respuesta: {sendResult.awbMessage.rawResponse.substring(0, 100)}...</p>
-                          )}
-                        </div>
-                      )}
-                      {sendResult.cslMessages && sendResult.cslMessages.length > 0 && (
-                        <div className="mt-1 text-xs font-mono bg-white/70 p-2 rounded border border-slate-200">
-                          <p className="font-bold mb-1"><strong>CSL:</strong> {sendResult.cslMessages.length} mensajes enviados (uno por house)</p>
-                          {sendResult.cslMessages.map((csl, idx) => (
-                            <p key={idx} className={csl.success ? 'text-green-600' : 'text-red-600'}>
-                              • CSL {idx + 1}: {csl.success ? '✅' : '❌'} Status {csl.statusCode} - {csl.message}
-                            </p>
+                      
+                      {/* Detalles de transmisión a Descartes */}
+                      {sendResult.transmissionResult && (
+                        <div className="mt-2 text-xs bg-white/70 p-3 rounded border border-slate-200 space-y-2">
+                          {/* FWB Result */}
+                          <div className="p-2 rounded bg-slate-50 border border-slate-200">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className={`text-lg ${sendResult.transmissionResult.fwbResult.success ? 'text-green-600' : 'text-red-600'}`}>
+                                {sendResult.transmissionResult.fwbResult.success ? '✓' : '✗'}
+                              </span>
+                              <strong className="text-sm">FWB ({sendResult.transmissionResult.fwbResult.reference})</strong>
+                            </div>
+                            {sendResult.transmissionResult.fwbResult.descartesResponse && (
+                              <div className="ml-6 text-xs space-y-0.5">
+                                {sendResult.transmissionResult.fwbResult.descartesResponse.tid && (
+                                  <p><span className="text-slate-500">TID:</span> <span className="font-mono text-blue-700">{sendResult.transmissionResult.fwbResult.descartesResponse.tid}</span></p>
+                                )}
+                                {sendResult.transmissionResult.fwbResult.descartesResponse.status && (
+                                  <p><span className="text-slate-500">Status:</span> <span className="text-green-700 font-medium">{sendResult.transmissionResult.fwbResult.descartesResponse.status}</span></p>
+                                )}
+                                {sendResult.transmissionResult.fwbResult.descartesResponse.bytesReceived && (
+                                  <p><span className="text-slate-500">Bytes:</span> {sendResult.transmissionResult.fwbResult.descartesResponse.bytesReceived}</p>
+                                )}
+                                {sendResult.transmissionResult.fwbResult.descartesResponse.error && (
+                                  <p className="text-red-600"><span className="text-slate-500">Error:</span> {sendResult.transmissionResult.fwbResult.descartesResponse.error}</p>
+                                )}
+                                {sendResult.transmissionResult.fwbResult.descartesResponse.errorDetail && (
+                                  <p className="text-red-600"><span className="text-slate-500">Detalle:</span> {sendResult.transmissionResult.fwbResult.descartesResponse.errorDetail}</p>
+                                )}
+                              </div>
+                            )}
+                            {sendResult.transmissionResult.fwbResult.error && !sendResult.transmissionResult.fwbResult.descartesResponse && (
+                              <p className="ml-6 text-red-600">{sendResult.transmissionResult.fwbResult.error}</p>
+                            )}
+                          </div>
+                          
+                          {/* FHL Results */}
+                          {sendResult.transmissionResult.fhlResults.map((fhl, idx) => (
+                            <div key={idx} className="p-2 rounded bg-slate-50 border border-slate-200">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className={`text-lg ${fhl.success ? 'text-green-600' : 'text-red-600'}`}>
+                                  {fhl.success ? '✓' : '✗'}
+                                </span>
+                                <strong className="text-sm">FHL ({fhl.reference})</strong>
+                              </div>
+                              {fhl.descartesResponse && (
+                                <div className="ml-6 text-xs space-y-0.5">
+                                  {fhl.descartesResponse.tid && (
+                                    <p><span className="text-slate-500">TID:</span> <span className="font-mono text-blue-700">{fhl.descartesResponse.tid}</span></p>
+                                  )}
+                                  {fhl.descartesResponse.status && (
+                                    <p><span className="text-slate-500">Status:</span> <span className="text-green-700 font-medium">{fhl.descartesResponse.status}</span></p>
+                                  )}
+                                  {fhl.descartesResponse.error && (
+                                    <p className="text-red-600"><span className="text-slate-500">Error:</span> {fhl.descartesResponse.error}</p>
+                                  )}
+                                  {fhl.descartesResponse.errorDetail && (
+                                    <p className="text-red-600"><span className="text-slate-500">Detalle:</span> {fhl.descartesResponse.errorDetail}</p>
+                                  )}
+                                </div>
+                              )}
+                              {fhl.error && !fhl.descartesResponse && (
+                                <p className="ml-6 text-red-600">{fhl.error}</p>
+                              )}
+                            </div>
                           ))}
-                          <p className="text-slate-400 text-[10px] mt-1">ℹ️ Cada CSL contiene una sola house según especificación Traxon</p>
+                          
+                          {/* Resumen total */}
+                          <div className="pt-2 border-t border-slate-300 flex items-center justify-between">
+                            <span className="text-slate-600">
+                              📈 Total: <strong>{sendResult.transmissionResult.totalSuccess}/{sendResult.transmissionResult.totalSent}</strong> exitosos
+                            </span>
+                            {sendResult.transmissionResult.totalFailed > 0 && (
+                              <span className="text-red-600 font-medium">
+                                ⚠️ {sendResult.transmissionResult.totalFailed} fallidos
+                              </span>
+                            )}
+                          </div>
                         </div>
                       )}
-                      {sendResult.cslMessage && !sendResult.cslMessages?.length && (
+
+                      {/* Información de copia (sin transmisión) */}
+                      {!sendResult.transmissionResult && sendResult.fwbMessage && (
+                        <div className="mt-2 text-xs font-mono bg-white/70 p-2 rounded border border-slate-200">
+                          <p><strong>FWB:</strong> Mensaje generado correctamente</p>
+                        </div>
+                      )}
+                      {!sendResult.transmissionResult && sendResult.fhlMessages && sendResult.fhlMessages.length > 0 && (
                         <div className="mt-1 text-xs font-mono bg-white/70 p-2 rounded border border-slate-200">
-                          <p><strong>CSL:</strong> Status {sendResult.cslMessage.statusCode} - {sendResult.cslMessage.message}</p>
+                          <p className="font-bold mb-1"><strong>FHL:</strong> {sendResult.fhlMessages.length} mensaje(s) FHL generado(s)</p>
                         </div>
                       )}
                     </div>
@@ -2097,411 +2241,210 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
             </div>
           )}
 
-          {/* ========== TAB: JSON ========== */}
+          {/* ========== TAB: EDI (CARGO-IMP) ========== */}
           {activeTab === 'json' && (
             <div className="h-full flex flex-col">
               <div className="flex items-center justify-between mb-4">
-                {/* Switch Moderno para selección de JSON */}
+                {/* Switch para selección de mensaje FWB/FHL */}
                 <div className="bg-slate-100 p-1 rounded-lg inline-flex items-center shadow-inner">
                   <button 
                     onClick={() => setActiveJsonTab('fwb')} 
                     className={`px-6 py-2 rounded-md text-sm font-bold transition-all duration-200 flex items-center gap-2 ${
                       activeJsonTab === 'fwb' 
-                        ? 'bg-white text-purple-700 shadow-sm ring-1 ring-black/5 transform scale-105' 
+                        ? 'bg-white text-emerald-700 shadow-sm ring-1 ring-black/5 transform scale-105'
                         : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
                     }`}
                   >
-                    <FileJson size={14} />
-                    FWB (Master)
+                    <Terminal size={14} />
+                    FWB/{cargoImpFwb?.messageVersion?.split('/')[1] || '16'}
                   </button>
                   {formData.hasHouses && (
                     <button 
                       onClick={() => setActiveJsonTab('fhl')} 
                       className={`px-6 py-2 rounded-md text-sm font-bold transition-all duration-200 flex items-center gap-2 ${
                         activeJsonTab === 'fhl' 
-                          ? 'bg-white text-purple-700 shadow-sm ring-1 ring-black/5 transform scale-105' 
+                          ? 'bg-white text-emerald-700 shadow-sm ring-1 ring-black/5 transform scale-105'
                           : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
                       }`}
                     >
                       <Layers size={14} />
-                      FHL (Houses)
+                      FHL/4 (Houses)
                     </button>
                   )}
                 </div>
 
                 <div className="flex gap-2">
                   <button 
-                    onClick={() => copyToClipboard(JSON.stringify(activeJsonTab === 'fwb' ? payloads?.fwb : payloads?.fhl, null, 2))}
+                    onClick={() => {
+                      copyToClipboard(activeJsonTab === 'fwb' ? cargoImpFwb?.fullMessage || '' : cargoImpConcatFhl || '');
+                    }}
                     className="flex items-center gap-2 px-3 py-1.5 text-sm bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
                   >
                     {copied ? <Check size={14} className="text-green-600"/> : <Copy size={14}/>}
-                    {copied ? 'Copiado!' : 'Copiar JSON'}
+                    {copied ? 'Copiado!' : 'Copiar EDI'}
                   </button>
                 </div>
               </div>
 
-              {genError && (
+              {/* Mostrar errores de generación */}
+              {cargoImpGenError && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4 flex items-center gap-2 text-red-700">
-                  <AlertTriangle size={16}/> Error generando JSON: {genError}
+                  <AlertTriangle size={16}/> Error generando EDI: {cargoImpGenError}
                 </div>
               )}
 
-              {/* ========== VISTA EXPANDIBLE DE CAMPOS TRANSMITIDOS ========== */}
-              <div className="mb-4 p-3 bg-gradient-to-r from-purple-50 to-purple-50 border border-purple-200 rounded-lg">
+
+              {/* ========== CONTENIDO EDI (CARGO-IMP) ========== */}
+              {/* Header informativo para EDI */}
+              <div className="mb-4 p-3 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-lg">
                 <div className="flex items-center gap-2 mb-2">
-                  <Code size={16} className="text-purple-600" />
-                  <span className="font-bold text-purple-800">Vista Expandible de Campos API Traxon</span>
-                  <span className="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded">Para Validación</span>
+                  <Terminal size={16} className="text-emerald-600" />
+                  <span className="font-bold text-emerald-800">Vista EDI - IATA CARGO-IMP</span>
+                  <span className="text-xs bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded">
+                    {cargoImpFwb?.messageVersion || 'FWB/16'}
+                  </span>
                 </div>
-                <p className="text-xs text-purple-600">
-                  Expande cada sección para ver TODOS los campos que se transmitirán al API de Traxon cargoJSON. 
-                  Los campos marcados como <span className="font-bold text-red-500">REQUERIDO</span> son obligatorios según la especificación.
+                <p className="text-xs text-emerald-600">
+                  Formato EDI legado IATA Cargo Interchange Message Procedures. 
+                  Cada segmento se visualiza como una tarjeta editable con límites de caracteres.
                 </p>
               </div>
 
-              <div className="flex-1 overflow-y-auto space-y-1">
-                {activeJsonTab === 'fwb' && payloads?.fwb && (
-                  <>
-                    {/* Identificación del Mensaje */}
-                    <ExpandableJsonSection 
-                      title="Identificación del Mensaje" 
-                      icon={<FileJson size={14}/>} 
-                      data={{ type: payloads.fwb.type }}
-                      color="purple"
-                      isRequired
-                      description="Campo 'id' no se incluye - Traxon asigna UUID internamente"
-                    />
-                    
-                    {/* Message Header */}
-                    <ExpandableJsonSection 
-                      title="Message Header (Direccionamiento)" 
-                      icon={<Send size={14}/>} 
-                      data={payloads.fwb.messageHeader}
-                      color="blue"
-                      isRequired
-                      description="Contiene senderAddresses y finalRecipientAddresses con PIMA"
-                    />
-                    
-                    {/* AWB Principal */}
-                    <ExpandableJsonSection 
-                      title="Datos Principales AWB" 
-                      icon={<Plane size={14}/>} 
-                      data={{ 
-                        airWaybillNumber: payloads.fwb.airWaybillNumber,
-                        origin: payloads.fwb.origin,
-                        destination: payloads.fwb.destination,
-                        totalConsignmentNumberOfPieces: payloads.fwb.totalConsignmentNumberOfPieces
-                      }}
-                      color="green"
-                      isRequired
-                      defaultExpanded
-                    />
-                    
-                    {/* Weight & Volume */}
-                    <ExpandableJsonSection 
-                      title="Peso y Volumen" 
-                      icon={<Scale size={14}/>} 
-                      data={{ weight: payloads.fwb.weight, volume: payloads.fwb.volume }}
-                      color="amber"
-                      isRequired
-                    />
-                    
-                    {/* Routing */}
-                    <ExpandableJsonSection 
-                      title="Route (Itinerario)" 
-                      icon={<MapPin size={14}/>} 
-                      data={payloads.fwb.route}
-                      color="blue"
-                      isRequired
-                      description="Al menos un elemento requerido"
-                    />
-                    
-                    {/* Flights */}
-                    <ExpandableJsonSection 
-                      title="Flights (Vuelos)" 
-                      icon={<Plane size={14}/>} 
-                      data={payloads.fwb.flights}
-                      color="slate"
-                      description="Opcional - Lista de vuelos programados"
-                    />
-                    
-                    {/* Shipper */}
-                    <ExpandableJsonSection 
-                      title="Shipper (Exportador)" 
-                      icon={<Building size={14}/>} 
-                      data={payloads.fwb.shipper}
-                      color="blue"
-                      isRequired
-                      description="AccountContact completo con address y contactDetails"
-                    />
-                    
-                    {/* Consignee */}
-                    <ExpandableJsonSection 
-                      title="Consignee (Importador)" 
-                      icon={<User size={14}/>} 
-                      data={payloads.fwb.consignee}
-                      color="green"
-                      isRequired
-                      description="AccountContact completo con address y contactDetails"
-                    />
-                    
-                    {/* Agent */}
-                    <ExpandableJsonSection 
-                      title="Agent (Agente IATA)" 
-                      icon={<Briefcase size={14}/>} 
-                      data={payloads.fwb.agent}
-                      color="amber"
-                      description="Incluye iataCargoAgentNumericCode y CASSAddress"
-                    />
-                    
-                    {/* Carrier's Execution */}
-                    <ExpandableJsonSection 
-                      title="Carriers Execution (Firma)" 
-                      icon={<PenLine size={14}/>} 
-                      data={payloads.fwb.carriersExecution}
-                      color="purple"
-                      isRequired
-                      description="Fecha, lugar y firma autorizada"
-                    />
-                    
-                    {/* Sender Reference */}
-                    <ExpandableJsonSection 
-                      title="Sender Reference" 
-                      icon={<Info size={14}/>} 
-                      data={payloads.fwb.senderReference}
-                      color="slate"
-                      isRequired
-                      description="fileReference y participantIdentifier"
-                    />
-                    
-                    {/* Charge Declarations */}
-                    <ExpandableJsonSection 
-                      title="Charge Declarations" 
-                      icon={<Banknote size={14}/>} 
-                      data={payloads.fwb.chargeDeclarations}
-                      color="green"
-                      isRequired
-                      description="Moneda, método de pago, valores declarados"
-                    />
-                    
-                    {/* Charge Items */}
-                    <ExpandableJsonSection 
-                      title="Charge Items (Rate Description)" 
-                      icon={<Layers size={14}/>} 
-                      data={payloads.fwb.chargeItems}
-                      color="amber"
-                      isRequired
-                      description="Líneas de cargo con peso, descripción, tarifas"
-                    />
-                    
-                    {/* Charge Summary */}
-                    <ExpandableJsonSection 
-                      title="Charge Summary (Prepaid/Collect)" 
-                      icon={<Banknote size={14}/>} 
-                      data={payloads.fwb.prepaidChargeSummary || payloads.fwb.collectChargeSummary}
-                      color="green"
-                      description="Totales de cargos según método de pago"
-                    />
-                    
-                    {/* Special Handling */}
-                    <ExpandableJsonSection 
-                      title="Special Handling Codes" 
-                      icon={<ShieldCheck size={14}/>} 
-                      data={payloads.fwb.specialHandlingCodes}
-                      color="red"
-                      description="Códigos como EAP, PER, DGR, etc."
-                    />
-                    
-                    {/* Special Service Request (SSR) */}
-                    {payloads.fwb.specialServiceRequest && (
-                      <ExpandableJsonSection 
-                        title="Special Service Request (SSR)" 
-                        icon={<FileText size={14}/>} 
-                        data={{ specialServiceRequest: payloads.fwb.specialServiceRequest }}
-                        color="amber"
-                        description="Instrucciones especiales de servicio para la aerolínea"
-                        defaultExpanded
+              {/* Panel de Política aplicada */}
+              {cargoImpPolicyInfo && (
+                    <div className={`mb-4 p-3 rounded-lg border ${
+                      cargoImpPolicyInfo.isDefault 
+                        ? 'bg-amber-50 border-amber-300' 
+                        : cargoImpPolicyInfo.source === 'custom'
+                          ? 'bg-purple-50 border-purple-200'
+                          : 'bg-blue-50 border-blue-200'
+                    }`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <Plane size={14} className={cargoImpPolicyInfo.isDefault ? 'text-amber-600' : 'text-blue-600'} />
+                          <span className={`font-bold text-sm ${cargoImpPolicyInfo.isDefault ? 'text-amber-800' : 'text-blue-800'}`}>
+                            {cargoImpPolicyInfo.airlineName}
+                          </span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                            cargoImpPolicyInfo.source === 'custom' 
+                              ? 'bg-purple-200 text-purple-700'
+                              : cargoImpPolicyInfo.source === 'configured'
+                                ? 'bg-blue-200 text-blue-700'
+                                : 'bg-amber-200 text-amber-700'
+                          }`}>
+                            {cargoImpPolicyInfo.source === 'custom' ? '✏️ Personalizada' 
+                              : cargoImpPolicyInfo.source === 'configured' ? '✓ Pre-configurada' 
+                              : '⚠️ DEFAULT'}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      {/* Detalles de la política */}
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        <span className="text-[10px] bg-white px-1.5 py-0.5 rounded border border-slate-200">
+                          <strong>FWB:</strong> {cargoImpPolicyInfo.policy.fwbVersion}
+                        </span>
+                        <span className="text-[10px] bg-white px-1.5 py-0.5 rounded border border-slate-200">
+                          <strong>FHL:</strong> {cargoImpPolicyInfo.policy.fhlVersion}
+                        </span>
+                        {cargoImpPolicyInfo.policy.includeUNB_UNZ && (
+                          <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">UNB/UNZ</span>
+                        )}
+                        {cargoImpPolicyInfo.policy.ociWithEori && (
+                          <span className="text-[10px] bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded">EORI</span>
+                        )}
+                        {cargoImpPolicyInfo.policy.sphCodes && cargoImpPolicyInfo.policy.sphCodes.length > 0 && (
+                          <span className="text-[10px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded">
+                            SPH: {cargoImpPolicyInfo.policy.sphCodes.join(', ')}
+                          </span>
+                        )}
+                      </div>
+                      
+                      {/* Warnings para DEFAULT */}
+                      {cargoImpPolicyInfo.warnings.length > 0 && (
+                        <div className="mt-2 space-y-1">
+                          {cargoImpPolicyInfo.warnings.map((warning, i) => (
+                            <p key={i} className="text-xs text-amber-700">{warning}</p>
+                          ))}
+                        </div>
+                      )}
+                      
+                      {/* Botón para ir a configuración */}
+                      {cargoImpPolicyInfo.isDefault && (
+                        <button
+                          onClick={() => setIsConfigOpen(true)}
+                          className="mt-2 text-xs text-amber-700 underline hover:text-amber-900 flex items-center gap-1"
+                        >
+                          <Settings size={12} /> Configurar política para aerolínea {formData?.awbNumber?.split('-')[0]}
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Error de generación */}
+                  {cargoImpGenError && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4 flex items-center gap-2 text-red-700">
+                      <AlertTriangle size={16}/> Error generando EDI: {cargoImpGenError}
+                    </div>
+                  )}
+
+                  {/* Visor de segmentos CARGO-IMP */}
+                  <div className="flex-1 overflow-y-auto">
+                    {activeJsonTab === 'fwb' && cargoImpFwb && (
+                      <CargoImpSegmentViewer 
+                        message={cargoImpFwb}
+                        onSegmentChange={(segmentCode, newValue) => {
+                          // Por ahora solo log, en futuro permitir edición
+                          console.log(`[CARGO-IMP] Editando segmento ${segmentCode}:`, newValue);
+                        }}
+                        onToggleSegment={handleCargoImpToggleSegment}
                       />
                     )}
-                    
-                    {/* Other Charges */}
-                    <ExpandableJsonSection 
-                      title="Other Charges" 
-                      icon={<Banknote size={14}/>} 
-                      data={payloads.fwb.otherCharges}
-                      color="slate"
-                      description="Cargos adicionales (AWC, CGC, etc.)"
-                    />
-                    
-                    {/* OCI Security */}
-                    <ExpandableJsonSection 
-                      title="OCI (Security & Customs Info)" 
-                      icon={<ShieldCheck size={14}/>} 
-                      data={payloads.fwb.oci}
-                      color="red"
-                      description="Información de seguridad: REGULATED_AGENT, SCREENING_METHOD, etc."
-                    />
-                    
-                    {/* Shipper's Certification */}
-                    <ExpandableJsonSection 
-                      title="Shipper's Certification" 
-                      icon={<PenLine size={14}/>} 
-                      data={{ shippersCertification: payloads.fwb.shippersCertification }}
-                      color="purple"
-                    />
-                  </>
-                )}
-
-                {activeJsonTab === 'fhl' && payloads?.fhl && (
-                  <>
-                    {/* CSL - Consolidation List - MÚLTIPLES MENSAJES */}
-                    <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                      <span className="font-bold text-amber-800">📦 Consolidation List (CSL)</span>
-                      <p className="text-xs text-amber-600 mt-1">
-                        Se enviarán <strong>{payloads.fhl._totalMessages || payloads.fhl.messages?.length || 1}</strong> mensajes CSL separados (uno por house)
-                      </p>
-                    </div>
-                    
-                    {/* Si es el nuevo formato con múltiples mensajes */}
-                    {payloads.fhl.messages && payloads.fhl.messages.length > 0 ? (
+                    {activeJsonTab === 'fhl' && (
                       <>
-                        {payloads.fhl.messages.map((csl: any, idx: number) => (
-                          <div key={idx} className="mb-4 border border-amber-300 rounded-lg overflow-hidden">
-                            <div className="bg-amber-100 px-3 py-2 font-bold text-amber-800 flex items-center gap-2">
-                              <Layers size={14}/>
-                              CSL #{idx + 1}: {csl.houseWaybillSummaries?.[0]?.serialNumber || `House ${idx + 1}`}
+                        {cargoImpFhl && cargoImpFhl.length > 0 ? (
+                          <>
+                            <div className="mb-3 p-2 bg-purple-50 border border-purple-200 rounded-lg">
+                              <span className="text-sm font-bold text-purple-800">
+                                📦 {cargoImpFhl.length} Mensaje(s) FHL
+                              </span>
                             </div>
-                            <div className="p-2 space-y-1">
-                              <ExpandableJsonSection 
-                                title={`Identificación CSL #${idx + 1}`}
-                                icon={<FileJson size={14}/>} 
-                                data={{ type: csl.type }}
-                                color="amber"
-                                isRequired
-                                description="Campo 'id' no se incluye - Traxon asigna UUID internamente"
-                              />
-                              
-                              <ExpandableJsonSection 
-                                title="Message Header" 
-                                icon={<Send size={14}/>} 
-                                data={csl.messageHeader}
-                                color="amber"
-                              />
-                              
-                              <ExpandableJsonSection 
-                                title="AWB & Routing" 
-                                icon={<Plane size={14}/>} 
-                                data={{ 
-                                  airWaybillNumber: csl.airWaybillNumber,
-                                  originAndDestination: csl.originAndDestination
-                                }}
-                                color="amber"
-                                isRequired
-                              />
-                              
-                              <ExpandableJsonSection 
-                                title="Quantity (House)" 
-                                icon={<Package size={14}/>} 
-                                data={csl.quantity}
-                                color="amber"
-                                isRequired
-                              />
-                              
-                              <ExpandableJsonSection 
-                                title="House Waybill Summary" 
-                                icon={<Layers size={14}/>} 
-                                data={csl.houseWaybillSummaries}
-                                color="amber"
-                                isRequired
-                                defaultExpanded
-                                description="Una sola house por mensaje CSL"
-                              />
-                              
-                              <ExpandableJsonSection 
-                                title="Shipper & Consignee" 
-                                icon={<Users size={14}/>} 
-                                data={{ shipper: csl.shipper, consignee: csl.consignee }}
-                                color="amber"
-                              />
-                            </div>
+                            {cargoImpFhl.map((fhlMsg: any, idx: number) => (
+                              <div key={idx} className="mb-4">
+                                <div className="bg-purple-100 px-3 py-2 rounded-t-lg font-bold text-purple-800 flex items-center gap-2">
+                                  <Layers size={14}/>
+                                  FHL #{idx + 1}
+                                </div>
+                                <CargoImpSegmentViewer 
+                                  message={fhlMsg}
+                                  onSegmentChange={(segmentCode, newValue) => {
+                                    console.log(`[CARGO-IMP FHL ${idx}] Editando segmento ${segmentCode}:`, newValue);
+                                  }}
+                                  onToggleSegment={handleCargoImpToggleSegment}
+                                />
+                              </div>
+                            ))}
+                          </>
+                        ) : (
+                          <div className="text-slate-400 italic p-4 text-center">
+                            No hay houses en este envío. FHL solo se genera para envíos consolidados.
                           </div>
-                        ))}
-                      </>
-                    ) : (
-                      // Fallback para formato antiguo (compatibilidad)
-                      <>
-                        <ExpandableJsonSection 
-                          title="Identificación CSL" 
-                          icon={<FileJson size={14}/>} 
-                          data={{ type: payloads.fhl.type }}
-                          color="amber"
-                          isRequired
-                        />
-                        
-                        <ExpandableJsonSection 
-                          title="Message Header CSL" 
-                          icon={<Send size={14}/>} 
-                          data={payloads.fhl.messageHeader}
-                          color="amber"
-                          isRequired
-                        />
-                        
-                        <ExpandableJsonSection 
-                          title="AWB & Origin/Destination" 
-                          icon={<Plane size={14}/>} 
-                          data={{ 
-                            airWaybillNumber: payloads.fhl.airWaybillNumber,
-                            originAndDestination: payloads.fhl.originAndDestination
-                          }}
-                          color="amber"
-                          isRequired
-                        />
-                        
-                        <ExpandableJsonSection 
-                          title="Quantity (Total Consignment)" 
-                          icon={<Package size={14}/>} 
-                          data={payloads.fhl.quantity}
-                          color="amber"
-                          isRequired
-                        />
-                        
-                        <ExpandableJsonSection 
-                          title="House Waybill Summaries" 
-                          icon={<Layers size={14}/>} 
-                          data={payloads.fhl.houseWaybillSummaries}
-                          color="amber"
-                          isRequired
-                          defaultExpanded
-                          description={`${payloads.fhl.houseWaybillSummaries?.length || 0} houses en este consolidado`}
-                        />
+                        )}
                       </>
                     )}
+                  </div>
 
-                    {/* Nota informativa */}
-                    <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                      <div className="flex items-center gap-2 text-blue-700">
-                        <Info size={14}/>
-                        <span className="text-sm font-medium">ℹ️ Formato de envío según Traxon</span>
+                  {/* Vista EDI Raw (Colapsable) */}
+                  {cargoImpFwb && (
+                    <details className="mt-4">
+                      <summary className="cursor-pointer text-sm text-slate-600 hover:text-slate-800 flex items-center gap-2 py-2">
+                        <Terminal size={14}/> Ver EDI Raw (Formato plano)
+                      </summary>
+                      <div className="bg-slate-900 text-green-400 p-4 rounded-lg overflow-auto font-mono text-xs leading-relaxed max-h-64 mt-2">
+                        <pre>{cargoImpFwb.fullMessage}</pre>
                       </div>
-                      <p className="text-xs text-blue-600 mt-1">
-                        Según especificación Traxon: cada house se envía en un <strong>mensaje CSL separado</strong>.
-                        Si hay {payloads.fhl._totalMessages || payloads.fhl.messages?.length || 1} houses, se enviarán {payloads.fhl._totalMessages || payloads.fhl.messages?.length || 1} mensajes CSL independientes.
-                        El campo <code className="bg-blue-100 px-1 rounded">id</code> no se incluye - Traxon asigna su propio UUID.
-                      </p>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {/* JSON Raw View (Colapsable) */}
-              <details className="mt-4">
-                <summary className="cursor-pointer text-sm text-slate-600 hover:text-slate-800 flex items-center gap-2 py-2">
-                  <Code size={14}/> Ver JSON Raw (Formato crudo)
-                </summary>
-                <div className="bg-slate-900 text-slate-50 p-4 rounded-lg overflow-auto font-mono text-xs leading-relaxed max-h-64 mt-2">
-                  <pre>{JSON.stringify(activeJsonTab === 'fwb' ? payloads?.fwb : payloads?.fhl, null, 2)}</pre>
-                </div>
-              </details>
+                    </details>
+                  )}
             </div>
           )}
         </div>
@@ -2511,37 +2454,23 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
         {/* ============================================================ */}
         <div className="px-3 py-2 border-t border-slate-100 flex justify-between items-center bg-white">
           <div className="text-[10px] text-slate-400 truncate max-w-[200px]">
-            {formData.traxonResponse && (
-              <span className={formData.status === 'REJECTED' ? 'text-red-500' : 'text-green-500'}>
-                {formData.traxonResponse}
+            {sendResult?.allSuccess && (
+              <span className="text-green-500">
+                EDI copiado al portapapeles
               </span>
             )}
           </div>
           <div className="flex gap-1.5">
-            <button onClick={onClose} className="px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-100 rounded transition-colors">
+            <button onClick={handleCloseModal} className="px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-100 rounded transition-colors">
               Cerrar
             </button>
-            {isEditable && (
-              (() => {
-                const missingRecipientInProd = currentEnv === 'PRODUCTION' && !formData.routing?.recipientAddress;
-                const isDisabled = isSending || missingRecipientInProd;
-                return (
-                  <button 
-                    onClick={handleTransmit}
-                    disabled={isDisabled}
-                    title={missingRecipientInProd ? 'No se puede enviar: falta recipientAddress del backend' : ''}
-                    className={`px-4 py-1.5 text-xs ${isDisabled ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'} text-white rounded transition-colors flex items-center gap-1.5 font-semibold`}
-                  >
-                    {isSending ? (
-                      <><Loader2 size={12} className="animate-spin" /> Enviando...</>
-                    ) : missingRecipientInProd ? (
-                      <><AlertTriangle size={12} /> Sin destino</>
-                    ) : (
-                      <><Send size={12} /> Transmitir</>
-                    )}
-                  </button>
-                );
-              })()
+            {isEditable && cargoImpFwb && (
+              <button 
+                onClick={handleCopyEdi}
+                className="px-4 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white rounded transition-colors flex items-center gap-1.5 font-semibold"
+              >
+                <Copy size={12} /> Copiar EDI
+              </button>
             )}
           </div>
         </div>
@@ -2550,12 +2479,13 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
       {/* Panel de Configuración */}
       <ConfigPanel 
         isOpen={isConfigOpen} 
-        onClose={() => {
-          setIsConfigOpen(false);
-          // Actualizar el estado del ambiente para forzar regeneración del JSON
-          setCurrentEnv(getTransmissionEnvironment());
-        }} 
-        onConfigChange={(newConfig) => setConnectorConfig(newConfig)}
+        onClose={() => setIsConfigOpen(false)} 
+        onConfigChange={(newConfig) => {
+          setConnectorConfig(newConfig);
+          // Forzar regeneración del mensaje cuando cambia la configuración (incluye Type B)
+          setConfigVersion(v => v + 1);
+        }}
+        onSaveConfig={onSaveConfig}
       />
     </div>
   );

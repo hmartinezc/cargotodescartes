@@ -318,6 +318,59 @@
       "default": []
     },
 
+    "alsoNotify": {
+      "type": "object",
+      "description": "Parte adicional a notificar sobre el envío (OPCIONAL). Se mapea a NFY en EDI, NotifyParty en XML.",
+      "properties": {
+        "accountNumber": { "type": "string", "description": "Número de cuenta (opcional)", "example": "NFY001" },
+        "name": { "type": "string", "maxLength": 35, "description": "Nombre de la parte a notificar", "example": "NOTIFY FLOWERS INC" },
+        "name2": { "type": "string", "maxLength": 35, "description": "Nombre adicional", "example": "IMPORT DEPARTMENT" },
+        "address": {
+          "type": "object",
+          "description": "Dirección de la parte a notificar",
+          "properties": {
+            "street": { "type": "string", "maxLength": 35, "example": "1000 BRICKELL AVE" },
+            "street2": { "type": "string", "maxLength": 35, "example": "SUITE 500" },
+            "place": { "type": "string", "maxLength": 17, "example": "MIAMI" },
+            "state": { "type": "string", "maxLength": 2, "example": "FL" },
+            "countryCode": { "type": "string", "pattern": "^[A-Z]{2}$", "example": "US" },
+            "postalCode": { "type": "string", "maxLength": 9, "example": "33131" }
+          }
+        },
+        "contact": {
+          "type": "object",
+          "description": "Información de contacto",
+          "properties": {
+            "identifier": { "type": "string", "enum": ["TE", "FX", "EM"], "default": "TE", "example": "TE" },
+            "number": { "type": "string", "maxLength": 25, "example": "13051234567" }
+          }
+        }
+      }
+    },
+
+    "accounting": {
+      "type": "array",
+      "description": "Información contable (OPCIONAL). Se mapea a ACC en EDI, IncludedAccountingNote en XML.",
+      "items": {
+        "type": "object",
+        "required": ["identifier", "accountingInformation"],
+        "properties": {
+          "identifier": { 
+            "type": "string",
+            "enum": ["GovernmentBillOfLading", "CreditCardNumber", "CreditCardExpiryDate", "CreditCardIssuanceName", "GeneralInformation", "ModeOfSettlement", "ShippersReferenceNumber"],
+            "description": "Tipo de información contable",
+            "example": "GeneralInformation"
+          },
+          "accountingInformation": { 
+            "type": "string", 
+            "maxLength": 34,
+            "description": "Detalle de la información contable",
+            "example": "PAYMENT BY WIRE TRANSFER"
+          }
+        }
+      }
+    },
+
     "specialHandlingCodes": {
       "type": "array",
       "description": "Códigos de manejo especial (OPCIONAL). Si no se envía, se aplican defaults por aerolínea: IBERIA=['ECC','EAP','PER'], otras=['EAP']",

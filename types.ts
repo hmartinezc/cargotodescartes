@@ -1,3 +1,34 @@
+// ============================================================
+// MESSAGE PROVIDER TYPES - CARGO-IMP (EDI)
+// ============================================================
+
+/**
+ * Proveedor de mensajería: CARGO-IMP
+ * Formato EDI plano IATA CIMP (FWB/16, FHL/4)
+ */
+export type MessageProvider = 'CARGO_IMP';
+
+/**
+ * Formato de mensaje: EDI plano IATA CIMP
+ */
+export type MessageFormat = 'CARGO_EDI';
+
+/**
+ * Información del proveedor para UI
+ */
+export const MESSAGE_PROVIDER_INFO: Record<MessageProvider, {
+  name: string;
+  format: MessageFormat;
+  description: string;
+  messageTypes: string[];
+}> = {
+  'CARGO_IMP': {
+    name: 'CARGO-IMP (EDI)',
+    format: 'CARGO_EDI',
+    description: 'Formato EDI plano IATA CIMP - FWB/16, FWB/17, FHL/4',
+    messageTypes: ['FWB', 'FHL']
+  }
+};
 
 // --- Enums from cargoJSON API ---
 export enum RateClassCode {
@@ -17,8 +48,7 @@ export enum RateClassCode {
 }
 
 // ============================================================
-// SPECIAL HANDLING CODES - Valores oficiales Traxon cargoJSON API
-// Ref: https://api.traxon.cargosmart.ai/docs - SpecialHandlingCode enum
+// SPECIAL HANDLING CODES - Códigos estándar IATA para CARGO-IMP
 // ============================================================
 export const AVAILABLE_SPH_CODES = {
   // Seguridad (Los más comunes para Colombia/Flores)
@@ -58,8 +88,7 @@ export const DEFAULT_SPH_BY_AIRLINE: Record<string, string[]> = {
 };
 
 // ============================================================
-// OCI CONTROL INFO - Valores oficiales Traxon cargoJSON API
-// Ref: CustomsSecurityAndRegulatoryControlInformationIdentifier enum
+// OCI CONTROL INFO - Códigos estándar IATA para información regulatoria
 // ============================================================
 export const AVAILABLE_OCI_CONTROL_INFO = {
   RA: { code: 'REGULATED_AGENT', short: 'RA', description: 'Agente Regulado (seguridad)', default: true },
@@ -118,12 +147,14 @@ export interface Party {
   taxId?: string; // NIT/Tax ID para OCI AGT/T (identificación fiscal)
   email?: string; // Email de contacto
   fax?: string; // Número de fax
+  contactPerson?: string; // Nombre de persona de contacto (para OCI CP)
   address: {
     street: string;
     street2?: string;
     place: string;
     state?: string;
     countryCode: string;
+    countryName?: string; // Nombre completo del país (ej: "People's Republic of China")
     postalCode: string;
   };
   contact?: {
@@ -158,12 +189,89 @@ export interface SecurityInfo {
   supplementaryControlInfo?: string;
 }
 
+/**
+ * Accounting Information - Información contable
+ * Según IATA cargoJSON API y FWB segment ACC
+ * Usado para información de pago, referencias gubernamentales, etc.
+ */
+export interface AccountingInfo {
+  /**
+   * Identificador del tipo de información contable
+   * Valores: GovernmentBillOfLading, CreditCardNumber, ShippersReferenceNumber, etc.
+   */
+  identifier: string;
+  /**
+   * Detalle de la información contable (máx 34 chars para EDI)
+   * Ejemplo: "PAYMENT BY CERTIFIED CHEQUE"
+   */
+  accountingInformation: string;
+}
+
+/**
+ * Also Notify Party - Parte a notificar
+ * Según IATA cargoJSON API y FWB segment NFY
+ * Persona/empresa adicional a ser notificada sobre el envío
+ */
+export interface AlsoNotifyParty {
+  /**
+   * Número de cuenta (opcional)
+   */
+  accountNumber?: string;
+  /**
+   * Nombre de la parte a notificar (máx 35 chars)
+   */
+  name: string;
+  /**
+   * Nombre adicional / línea 2 (máx 35 chars)
+   */
+  name2?: string;
+  /**
+   * Dirección de la parte a notificar
+   */
+  address?: {
+    street?: string;
+    street2?: string;
+    place: string;
+    state?: string;
+    countryCode: string;
+    postalCode?: string;
+  };
+  /**
+   * Información de contacto
+   */
+  contact?: {
+    identifier: string; // TE, FX, EM
+    number: string;
+  };
+}
+
 export interface Dimension {
   length: number;
   width: number;
   height: number;
   pieces: number;
   unit: 'CENTIMETRE' | 'INCH';
+}
+
+/**
+ * Unit Load Device (ULD) - Contenedor/Pallet para transporte aéreo
+ * Según IATA Cargo-XML: AssociatedUnitLoadTransportEquipment
+ * Referencia: riege/one-record-converter 888-11111111_XFWB_multipleULD_multipleHTS.xml
+ */
+export interface ULD {
+  /**
+   * Número serial del ULD (ej: 1337, 4711)
+   */
+  serialNumber: string;
+  /**
+   * Código de tipo de ULD según IATA (ej: PMC, AKE, AKH, AAP, etc.)
+   * PMC = Pallet + Net, AKE = LD3 Container, etc.
+   */
+  typeCode: string;
+  /**
+   * Código de la aerolínea operadora del ULD (ej: XX, LH, DL)
+   */
+  ownerCode?: string;
 }
 
 export interface RateCharge {
@@ -182,8 +290,13 @@ export interface RateCharge {
   goodsDescriptionOverride?: string;
   commodityCode?: string;
   /**
+   * Cantidad de paquetes/bultos para este rate.
+   * Según IATA Cargo-XML: PackageQuantity
+   * Opcional - si no se especifica, se usa pieces
+   */
+  packageQuantity?: number;
+  /**
    * Códigos HS/HTS arancelarios para este rate.
-   * Traxon API acepta múltiples códigos por rate.
    * Ejemplo: ["0603110000", "0603129000"]
    */
   hsCodes?: string[];
@@ -204,6 +317,10 @@ export interface Agent {
   cassCode?: string;
   place: string;
   accountNumber?: string;
+  locationCode?: string;  // Código de ubicación para SpecifiedCargoAgentLocation
+  phone?: string;         // Teléfono para DefinedTradeContact
+  postalCode?: string;    // Código postal para FreightForwarderAddress
+  street?: string;        // Dirección para FreightForwarderAddress
 }
 
 export type ShipmentStatus = 'DRAFT' | 'TRANSMITTED' | 'ACKNOWLEDGED' | 'REJECTED';
@@ -221,13 +338,69 @@ export interface TransmissionLog {
 export interface RoutingInfo {
   senderAddress: string;    // Dirección PIMA del agente (ej: REUFFW90AVTOPF/BOG01)
   recipientAddress: string; // Dirección PIMA de la aerolínea (ej: USCAIR01LUXXSXS)
+  
+  // Campo opcional para CargoXML XFZB - segundo RecipientParty con schemeID="P"
+  // Según Riege XFZB puede tener múltiples RecipientParty (C y P)
+  recipientParticipantAddress?: string; // Ej: REUAIR08$CODE
+}
+
+/**
+ * Configuración de transmisión a Descartes.
+ * Estos valores vienen del backend y se usan para enviar mensajes EDI.
+ */
+export interface DescartesTransmitConfig {
+  /** URL del endpoint de Descartes (ej: https://wwwtest.myvan.descartes.com/HttpUpload/SimpleUploadHandler.aspx) */
+  endpoint: string;
+  /** Usuario para Basic Auth */
+  username: string;
+  /** Contraseña para Basic Auth */
+  password: string;
+  /** Si la transmisión está habilitada */
+  enabled?: boolean;
 }
 
 export interface InternalShipment {
   id: string;
   messageId?: string; // UUID/GUID opcional del backend para tracking de transmisiones
   status: ShipmentStatus;
-  traxonResponse?: string; 
+  
+  /**
+   * Proveedor de mensajería: 'CARGO_IMP' para mensajes EDI (FWB/FHL)
+   */
+  provider?: MessageProvider;
+  
+  /**
+   * Referencia del remitente para el MessageHeaderDocument.
+   * Según IATA Cargo-XML 3.0: SenderAssignedID en BusinessHeaderDocument.
+   * Opcional - si no se proporciona, se genera automáticamente.
+   */
+  senderReference?: string;
+  
+  /**
+   * Código de estado aduanero según IATA Cargo-XML.
+   * Según UN/CEFACT: T = Transit, X = Export cleared, etc.
+   * Opcional - usado en CustomsStatusCode element.
+   */
+  customsStatusCode?: string;
+  
+  /**
+   * Total de impuestos (taxes) para charge summary.
+   * Se suma a TotalCollectOtherChargeAmount o TotalPrepaidOtherChargeAmount.
+   */
+  taxTotal?: number;
+  
+  /**
+   * Total debido al carrier (payable carrier).
+   * Usado en ApplicableTotalRating > CarrierTotalDuePayableAmount.
+   */
+  carrierDuePayable?: number;
+  
+  /**
+   * Total debido al agente (payable agent).
+   * Usado en ApplicableTotalRating > AgentTotalDuePayableAmount.
+   */
+  agentDuePayable?: number;
+  
   awbNumber: string;
   origin: string;
   destination: string;
@@ -237,6 +410,13 @@ export interface InternalShipment {
   volume?: number;  // Opcional
   volumeUnit?: 'CUBIC_CENTIMETRE' | 'CUBIC_METRE';  // Opcional
   dimensions?: Dimension[];  // Opcional
+  /**
+   * Unit Load Devices (ULDs) - Contenedores/Pallets para transporte aéreo
+   * Opcional - usado para envíos con pallets, containers LD3, etc.
+   * Según IATA Cargo-XML: AssociatedUnitLoadTransportEquipment
+   * Referencia: riege/one-record-converter 888-11111111_XFWB_multipleULD_multipleHTS.xml
+   */
+  ulds?: ULD[];
   description?: string;  // Opcional - se genera automático
   /**
    * Override manual del goodsDescription para el Master AWB.
@@ -262,10 +442,26 @@ export interface InternalShipment {
   specialHandlingCodes?: string[];
   /**
    * Special Service Request (SSR) - Instrucciones especiales de servicio.
-   * Campo opcional que va directamente al API de Traxon.
    * Ejemplo: "MUST BE KEPT ABOVE 5 DEGREES CELSIUS."
    */
   specialServiceRequest?: string;
+  /**
+   * Also Notify Party - Parte adicional a notificar sobre el envío.
+   * Opcional. Se mapea a:
+   * - EDI: Segmento NFY (NH en algunas aerolíneas)
+   * - Cargo-XML: AssociatedParty con RoleCode="NI"
+   * - JSON: alsoNotify object
+   */
+  alsoNotify?: AlsoNotifyParty;
+  /**
+   * Accounting Information - Información contable.
+   * Opcional. Array de líneas de información contable.
+   * Se mapea a:
+   * - EDI: Segmento ACC (múltiples líneas)
+   * - Cargo-XML: AccountingInformation element
+   * - JSON: accounting array
+   */
+  accounting?: AccountingInfo[];
   /**
    * Override manual del Charge Summary (Prepaid o Collect).
    * Si se proporciona desde el backend, se usa en lugar del cálculo automático.
@@ -285,6 +481,13 @@ export interface InternalShipment {
   hasHouses: boolean;
   houseBills?: InternalHouseBill[];  // Opcional si hasHouses=false
   logs?: TransmissionLog[];  // Opcional
+  
+  /**
+   * Configuración de transmisión a Descartes.
+   * Opcional - si viene del backend, habilita el botón "Transmitir".
+   * Si no está presente, solo se muestra "Copiar EDI".
+   */
+  descartesConfig?: DescartesTransmitConfig;
 }
 
 export interface InternalHouseBill {
@@ -300,27 +503,32 @@ export interface InternalHouseBill {
   /**
    * Descripción de mercancía / Nature of Goods
    * 
-   * En JSON API de Traxon NO hay límite de 20 chars como en EDI legacy.
-   * Puede contener hasta 500+ caracteres con información completa:
-   * - Descripción de productos
-   * - "INVOICES ATTACHMENT"
-   * - "DOCUMENTS ATTACHMENT"  
-   * - Lista de productos
-   * 
-   * Ejemplo: "CONSOLIDATED FLOWERS, INVOICES ATTACHMENT, DOCUMENTS ATTACHMENT, ROSES RED 50%, CARNATIONS 30%, ORCHIDS 20%"
+   * Ejemplo: "CONSOLIDATED FLOWERS, ROSES, CARNATIONS"
    */
   natureOfGoods: string;
   commonName?: string;
   htsCodes?: string[];  // Códigos arancelarios HTS (múltiples permitidos, ej: ["060311", "060312"])
-  // Campos completos para API Traxon (opcionales para compatibilidad)
-  shipper?: Party;      // Shipper completo para FHL (requerido por Traxon API)
-  consignee?: Party;    // Consignee completo para FHL (requerido por Traxon API)
+  // Campos completos para FHL
+  shipper?: Party;      // Shipper completo para FHL
+  consignee?: Party;    // Consignee completo para FHL
+  
+  // ============================================================
+  // CAMPOS ADICIONALES PARA CARGO-XML (XFZB) - según Riege reference
+  // ============================================================
+  currency?: string;           // Moneda para cargos del house (ISO 4217)
+  totalCharge?: number;        // Total de cargos del house
+  packageQuantity?: number;    // Número de bultos/cajas (diferente de pieces)
+  chargeableWeight?: number;   // Peso cobrable (volumétrico o real)
+  volume?: number;             // Volumen en CBM
+  customerReference?: string;  // Referencia del cliente / número de pedido
+  incoterm?: string;           // Término de comercio (CIP, FOB, etc.)
+  informationCode?: string;    // Código de información (NDA = No Dangerous Articles)
 }
 
 // Type alias para compatibilidad con componentes
 export type HouseBill = InternalHouseBill;
 
-// --- Champ Traxon CargoJSON Spec Types ---
+// --- Types for CARGO-IMP EDI Generation ---
 
 export interface ChampWeight {
   amount: string;
@@ -520,6 +728,121 @@ export interface SecurityOciConfig {
   screenerName: string;
 }
 
+/**
+ * Configuración de CARGO-IMP (EDI)
+ */
+export interface CargoImpConfig {
+  /** Versión FWB a usar: FWB/16 o FWB/17 */
+  fwbVersion: 'FWB/16' | 'FWB/17';
+  /** Versión FHL a usar: FHL/2 o FHL/4 */
+  fhlVersion: 'FHL/2' | 'FHL/4';
+  /** Incluir envoltorio UN/EDIFACT UNB/UNZ */
+  includeUNB_UNZ: boolean;
+  /** Usar prefijo EORI en OCI (true para EU, false para EC/LATAM) */
+  ociWithEori: boolean;
+  /** Códigos SPH por defecto para CARGO-IMP */
+  defaultSphCodes: string[];
+  /** Segmentos FWB habilitados */
+  enabledFwbSegments: string[];
+  /** Segmentos FHL habilitados */
+  enabledFhlSegments: string[];
+  /** Políticas personalizadas por aerolínea (prefijo AWB) */
+  airlinePolicies: Record<string, CargoImpAirlinePolicy>;
+  
+  // ==================== CONFIGURACIÓN EDIFACT ====================
+  
+  /** 
+   * Número de control EDIFACT (UNB/UNH/UNT/UNZ)
+   * Si está vacío, se genera dinámicamente
+   * Formato: 14 dígitos, ej: '96728316614806'
+   */
+  controlNumber: string;
+  
+  /**
+   * Sender ID para mensajes EDIFACT
+   * Se usa este valor fijo, independiente del país del shipper
+   * Ej: 'REUAGT89COCRGMASTER/BOG01:PIMA'
+   */
+  senderId: string;
+  
+  /**
+   * Firma por defecto para CER e ISU
+   * Ej: 'CARGOOP', 'DSVOP'
+   */
+  defaultSignature: string;
+}
+
+/**
+ * Política CARGO-IMP específica por aerolínea
+ */
+export interface CargoImpAirlinePolicy {
+  fwbVersion?: 'FWB/16' | 'FWB/17';
+  fhlVersion?: 'FHL/2' | 'FHL/4';
+  includeUNB_UNZ?: boolean;
+  ociWithEori?: boolean;
+  sphCodes?: string[];
+  /** Segmentos FWB habilitados para esta aerolínea */
+  enabledSegments?: string[];
+  /** Segmentos FWB deshabilitados para esta aerolínea */
+  disabledSegments?: string[];
+  /** Segmentos FHL habilitados para esta aerolínea */
+  enabledFhlSegments?: string[];
+  /** Segmentos FHL deshabilitados para esta aerolínea */
+  disabledFhlSegments?: string[];
+  /** Notas adicionales */
+  notes?: string;
+  
+  // ==================== NUEVAS PROPIEDADES CARGO-IMP ====================
+  
+  /** 
+   * Número de caso de política de mensaje:
+   * - 20: FWB estándar + FHL individuales (consolidado)
+   * - 21: FWB estándar (directo)
+   * - 40: FWB_NEW + FHL individuales
+   * - 41: FWB_NEW directo
+   * - 50: FWB_NEW + FHL concatenadas con '&'
+   * - 51: FWB_NEW + FHL concatenadas directo
+   * - 70: DHL/ABX - FHL siempre con header EDIFACT
+   * - 71: DHL/ABX directo
+   * - 80: Todas FHL en 1 mensaje, MBI solo en primera
+   * - 81: MBI only first (directo)
+   */
+  casePolicy?: 20 | 21 | 40 | 41 | 50 | 51 | 70 | 71 | 80 | 81;
+  
+  /** FHL siempre incluye header/footer EDIFACT (Case 7: DHL/ABX) */
+  fhlAlwaysWithHeader?: boolean;
+  
+  /** MBI solo en primera HAWB de un mensaje concatenado (Case 8) */
+  mbiOnlyFirstHawb?: boolean;
+  
+  /** Usar nombre de agencia en lugar de agente para CER */
+  useAgencyNameForCER?: boolean;
+  
+  /** Requiere código HTS en posición especial */
+  requiresHTS?: boolean;
+  
+  /** Requiere código postal para China */
+  requiresChinaPostalCode?: boolean;
+  
+  /** Usar variante NG consolidada */
+  useConsolidatedNG?: boolean;
+  
+  /** 
+   * Prefijos de HAWB que deben agregar 0 adelante
+   * Ej: ['CM', 'SK', 'LG'] → se convierten en '0CM', '0SK', '0LG'
+   */
+  hawbPrefixAdd0?: string[];
+  
+  /** Dirección de la aerolínea para CVD */
+  airlineAddress?: string;
+  
+  /** Usar formato FWB/9 (legado) en lugar de FWB/16+ */
+  useFwb9?: boolean;
+  
+  /** País del emisor: 'EC' = Ecuador, 'CO' = Colombia */
+  senderCountry?: 'EC' | 'CO';
+}
+
 export interface ConnectorConfig {
   // SPH Codes por defecto según prefijo de aerolínea (AWB)
   sphByAirline: Record<string, string[]>;
@@ -560,6 +883,9 @@ export interface ConnectorConfig {
     // Reintentos automáticos
     maxRetries: number;
   };
+  
+  // Configuración de CARGO-IMP (EDI)
+  cargoImp: CargoImpConfig;
   
   // Última actualización
   lastUpdated: string;
@@ -605,13 +931,195 @@ export const DEFAULT_CONNECTOR_CONFIG: ConnectorConfig = {
     sendTimeoutMs: 30000,
     maxRetries: 3
   },
+  // Configuración CARGO-IMP (EDI)
+  cargoImp: {
+    fwbVersion: 'FWB/16',
+    fhlVersion: 'FHL/4',
+    includeUNB_UNZ: false,
+    ociWithEori: false,  // false = Formato Ecuador/LATAM sin prefijo EORI
+    defaultSphCodes: ['EAP', 'PER'],
+    enabledFwbSegments: ['AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'SPH', 'OCI', 'CER', 'ISU'],
+    enabledFhlSegments: ['MBI', 'TXT', 'HBS', 'OCI'],
+    // Control Number fijo para EDIFACT (si vacío se genera dinámicamente)
+    controlNumber: '96728316614806',
+    // Sender ID fijo (se usa siempre, independiente del país del shipper)
+    senderId: 'REUAGT89COCRGMASTER/BOG01:PIMA',
+    // Firma por defecto para CER e ISU
+    defaultSignature: 'CARGOOP',
+    // Políticas por aerolínea según documentación legacy
+    // Cada aerolínea puede tener requisitos específicos de versión, segmentos y formato OCI
+    airlinePolicies: {
+      '075': { // IBERIA - Case 2, Option 0
+        fwbVersion: 'FWB/16',
+        fhlVersion: 'FHL/4',
+        includeUNB_UNZ: true,
+        ociWithEori: true,  // UE requiere EORI
+        sphCodes: ['ECC', 'EAP', 'PER'],
+        enabledSegments: ['FWB', 'AWB', 'RTG', 'SHP', 'CNE', 'AGT', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+        disabledSegments: ['FLT', 'SSR', 'ACC', 'OTH', 'CER', 'NFY']
+      },
+      '145': { // LATAM - Case 2, Option 1
+        fwbVersion: 'FWB/16',
+        fhlVersion: 'FHL/4',
+        includeUNB_UNZ: true,
+        ociWithEori: false,  // LATAM no requiere EORI
+        sphCodes: ['EAP'],
+        enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+        disabledSegments: ['OTH', 'NFY']
+      },
+      '074': { // KLM - Case 2, Option 4
+        fwbVersion: 'FWB/16',
+        fhlVersion: 'FHL/4',
+        includeUNB_UNZ: true,
+        ociWithEori: true,  // UE requiere EORI
+        sphCodes: ['EAP'],
+        enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'OTH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+        disabledSegments: ['NFY'],
+        notes: 'KLM requiere todos los segmentos incluyendo OTH'
+      },
+      '157': { // QATAR - Case 2, Option 3
+        fwbVersion: 'FWB/16',
+        fhlVersion: 'FHL/4',
+        includeUNB_UNZ: true,
+        ociWithEori: false,
+        sphCodes: ['EAP'],
+        enabledSegments: ['FWB', 'AWB', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'OTH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+        disabledSegments: ['FLT', 'NFY']
+      },
+      '369': { // ATLAS/Ethiopian - Case 2, Option 2
+        fwbVersion: 'FWB/16',
+        fhlVersion: 'FHL/4',
+        includeUNB_UNZ: false,  // Sin wrapper EDIFACT
+        ociWithEori: false,
+        sphCodes: ['EAP'],
+        enabledSegments: ['AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI'],
+        disabledSegments: ['FWB', 'FTR', 'OTH', 'NFY'],  // Sin header/footer
+        notes: 'Atlas/Ethiopian: sin header UNB/UNH ni footer UNT/UNZ'
+      },
+      '057': { // AIR FRANCE
+        fwbVersion: 'FWB/16',
+        fhlVersion: 'FHL/4',
+        includeUNB_UNZ: true,
+        ociWithEori: true,  // UE requiere EORI
+        sphCodes: ['EAP'],
+        enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+        disabledSegments: ['OTH', 'NFY']
+      },
+      '020': { // LUFTHANSA
+        fwbVersion: 'FWB/16',
+        fhlVersion: 'FHL/4',
+        includeUNB_UNZ: true,
+        ociWithEori: true,  // UE requiere EORI
+        sphCodes: ['EAP'],
+        enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+        disabledSegments: ['OTH', 'NFY']
+      },
+      '205': { // EMIRATES (prefijo AWB real)
+        fwbVersion: 'FWB/16',
+        fhlVersion: 'FHL/4',
+        includeUNB_UNZ: true,
+        ociWithEori: false,
+        sphCodes: ['EAP'],
+        enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+        disabledSegments: ['OTH', 'NFY'],
+        notes: 'Emirates: prefijo AWB 205'
+      },
+      '176': { // EMIRATES (código IATA numérico alternativo) - Case 4
+        fwbVersion: 'FWB/16',
+        fhlVersion: 'FHL/4',
+        includeUNB_UNZ: true,
+        ociWithEori: false,
+        sphCodes: ['EAP'],
+        enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'OTH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+        disabledSegments: ['NFY'],
+        useAgencyNameForCER: true,
+        notes: 'Emirates 176: CER usa nombre de agencia'
+      },
+      '235': { // TURKISH AIRLINES - Case 4
+        fwbVersion: 'FWB/16',
+        fhlVersion: 'FHL/4',
+        includeUNB_UNZ: true,
+        ociWithEori: false,
+        sphCodes: ['EAP'],
+        enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'OTH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+        disabledSegments: ['NFY'],
+        requiresHTS: true,
+        notes: 'Turkish Airlines: requiere código HTS'
+      },
+      '985': { // LATAM CARGO - Case 2
+        fwbVersion: 'FWB/16',
+        fhlVersion: 'FHL/4',
+        includeUNB_UNZ: true,
+        ociWithEori: false,
+        sphCodes: ['EAP'],
+        enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+        disabledSegments: ['OTH', 'NFY'],
+        useConsolidatedNG: true,
+        notes: 'LATAM Cargo: NG especial para consolidados'
+      },
+      '045': { // AVIANCA CARGO - Case 2
+        fwbVersion: 'FWB/16',
+        fhlVersion: 'FHL/4',
+        includeUNB_UNZ: true,
+        ociWithEori: false,
+        sphCodes: ['EAP'],
+        enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+        disabledSegments: ['OTH', 'NFY']
+      },
+      // === CASO 7: DHL / ABX - FHL siempre con header EDIFACT ===
+      '992': { // DHL AVIATION - Case 7
+        fwbVersion: 'FWB/16',
+        fhlVersion: 'FHL/4',
+        includeUNB_UNZ: true,
+        ociWithEori: false,
+        sphCodes: ['EAP'],
+        enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'NFY', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+        disabledSegments: ['OTH'],
+        fhlAlwaysWithHeader: true,
+        notes: 'DHL Aviation: Caso 7 - FHL siempre incluye header/footer EDIFACT'
+      },
+      '999': { // POLAR AIR CARGO (DHL) - Case 7
+        fwbVersion: 'FWB/16',
+        fhlVersion: 'FHL/4',
+        includeUNB_UNZ: true,
+        ociWithEori: false,
+        sphCodes: ['EAP'],
+        enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'NFY', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+        disabledSegments: ['OTH'],
+        fhlAlwaysWithHeader: true,
+        notes: 'Polar Air (DHL): Caso 7'
+      },
+      '155': { // ABX AIR - Case 7
+        fwbVersion: 'FWB/16',
+        fhlVersion: 'FHL/4',
+        includeUNB_UNZ: true,
+        ociWithEori: false,
+        sphCodes: ['EAP'],
+        enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'NFY', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+        disabledSegments: ['OTH'],
+        fhlAlwaysWithHeader: true,
+        notes: 'ABX Air: Caso 7 - FHL siempre incluye header/footer EDIFACT'
+      },
+      // DEFAULT - Se usa para cualquier aerolínea no configurada explícitamente
+      'DEFAULT': {
+        fwbVersion: 'FWB/16',
+        fhlVersion: 'FHL/4',
+        includeUNB_UNZ: true,
+        ociWithEori: false,  // Por defecto sin EORI (cambiar si destino es UE)
+        sphCodes: ['EAP'],
+        enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+        disabledSegments: ['OTH', 'NFY'],
+        notes: 'Política por defecto para aerolíneas no configuradas. Ajustar según requisitos.'
+      }
+    }
+  },
   lastUpdated: new Date().toISOString()
 };
 
 // Función para cargar configuración desde localStorage
 export function loadConnectorConfig(): ConnectorConfig {
   try {
-    const saved = localStorage.getItem('traxon_connector_config');
+    const saved = localStorage.getItem('cargo_imp_connector_config');
     if (saved) {
       const parsed = JSON.parse(saved);
       // Merge con defaults para asegurar que nuevos campos existan
@@ -627,7 +1135,7 @@ export function loadConnectorConfig(): ConnectorConfig {
 export function saveConnectorConfig(config: ConnectorConfig): void {
   try {
     config.lastUpdated = new Date().toISOString();
-    localStorage.setItem('traxon_connector_config', JSON.stringify(config));
+    localStorage.setItem('cargo_imp_connector_config', JSON.stringify(config));
   } catch (e) {
     console.error('Error saving connector config:', e);
   }
@@ -635,7 +1143,7 @@ export function saveConnectorConfig(config: ConnectorConfig): void {
 
 // Función para resetear a defaults
 export function resetConnectorConfig(): ConnectorConfig {
-  localStorage.removeItem('traxon_connector_config');
+  localStorage.removeItem('cargo_imp_connector_config');
   return DEFAULT_CONNECTOR_CONFIG;
 }
 

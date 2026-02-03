@@ -1,12 +1,14 @@
 {
-  "name": "traxon-connector",
+  "name": "cargo-imp-connector",
   "private": true,
-  "version": "1.0.0",
+  "version": "3.0.0",
   "type": "module",
+  "description": "CARGO-IMP EDI message generator (FWB/FHL) for air cargo",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "build:embed": "vite build --config vite.embed.config.ts",
+    "build:prod": "vite build && vite build --config vite.embed.config.ts",
     "preview": "vite preview"
   },
   "dependencies": {

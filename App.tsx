@@ -3,7 +3,6 @@ import { FunctionComponent, JSX } from 'preact';
 import { mockShipments } from './mockData';
 import { InternalShipment, ShipmentStatus, TransmissionLog } from './types';
 import { ChampModal } from './components/ChampModal';
-import { TraxonSendResult } from './services/traxonApiClient';
 import { Plane, FileText, ArrowRight, CheckCircle, Clock, ShieldCheck, XCircle, Search, Wifi, Package, MapPin, Building, User, Scale, Layers, Send, ChevronRight } from 'lucide-preact';
 
 // ============================================================
@@ -329,52 +328,31 @@ const App: FunctionComponent = () => {
     setSelectedShipment(updatedShipment);
   }, []);
 
-  // Handle REAL Transmission to Traxon UAT
-  const handleTransmit = useCallback((id: string, payloadJson: string, traxonResult?: TraxonSendResult) => {
+  // Handle Copy EDI Result (simplificado - sin transmisiones)
+  const handleCopyResult = useCallback((id: string, ediContent: string) => {
     const logId = `log-${Date.now()}`;
     const timestamp = new Date().toISOString();
 
-    // Determinar estado basado en resultado real de Traxon
-    const isSuccess = traxonResult?.allSuccess ?? false;
-    const responseMessage = traxonResult?.summary || 'Envío procesado';
-    const awbStatus = traxonResult?.awbMessage?.statusCode || 0;
-
-    // 1. Create Log Entry with real result
+    // Create Log Entry for EDI copy
     const newLog: TransmissionLog = {
         id: logId,
         timestamp: timestamp,
         type: 'OUTBOUND',
-        status: isSuccess ? 'ACCEPTED' : 'REJECTED',
-        payloadJson: payloadJson,
-        responseMessage: responseMessage,
+        status: 'ACCEPTED',
+        payloadJson: ediContent,
+        responseMessage: 'EDI copiado al portapapeles',
         responseTimestamp: new Date().toISOString()
     };
 
-    // 2. Update Status based on real result
-    const finalStatus: ShipmentStatus = isSuccess ? 'ACKNOWLEDGED' : 'REJECTED';
-    
+    // Update shipment with log
     setShipments(prev => prev.map(s => {
         if (s.id !== id) return s;
         return {
             ...s,
-            status: finalStatus,
-            traxonResponse: `${responseMessage} (HTTP ${awbStatus})`,
             logs: [newLog, ...(s.logs || [])]
         };
     }));
-
-    // Update modal state
-    if (selectedShipment && selectedShipment.id === id) {
-      setSelectedShipment(prev => prev ? ({
-        ...prev,
-        status: finalStatus,
-        traxonResponse: `${responseMessage} (HTTP ${awbStatus})`,
-        logs: [newLog, ...(prev.logs || [])]
-      }) : null);
-    }
-
-    console.log(`✅ Shipment ${id} actualizado: ${finalStatus}`);
-  }, [selectedShipment]);
+  }, []);
 
   const getStatusBadge = (status: ShipmentStatus) => {
     switch(status) {
@@ -427,7 +405,7 @@ const App: FunctionComponent = () => {
               <Plane size={20} />
             </div>
             <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-700 to-purple-500">
-              Champ Traxon Connector
+              CARGO-IMP EDI Connector
             </h1>
           </div>
           <div className="text-sm text-slate-500">
@@ -475,7 +453,7 @@ const App: FunctionComponent = () => {
         onClose={handleCloseModal} 
         shipment={selectedShipment} 
         onSave={handleSaveShipment}
-        onTransmitSuccess={handleTransmit} // Passing the new handler
+        onCopySuccess={handleCopyResult}
       />
 
     </div>

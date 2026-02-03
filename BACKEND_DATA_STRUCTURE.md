@@ -132,7 +132,16 @@ Este documento describe la estructura JSON que el backend debe construir para en
   // ===== ROUTING (Opcional - tiene defaults) =====
   routing?: {
     senderAddress: string,        // PIMA agente "REUFFW90AVTOPF/BOG01"
-    recipientAddress: string      // PIMA aerolínea "USCAIR01LUXXSXS"
+    recipientAddress: string      // PIMA aerolínea "USCAIR01LUXXSXS" - USADO EN TYPE B HEADER
+  },
+
+  // ===== TRANSMISIÓN A DESCARTES (Opcional) =====
+  // Si se incluye, habilita el botón "Transmitir a Descartes" en la UI
+  descartesConfig?: {
+    endpoint: string,             // URL del endpoint (ej: "https://wwwtest.myvan.descartes.com/HttpUpload/SimpleUploadHandler.aspx")
+    username: string,             // Usuario para Basic Auth (ej: "usuario@empresa.com")
+    password: string,             // Contraseña para Basic Auth
+    enabled?: boolean             // true para habilitar (default: true si hay credenciales)
   },
 
   // ===== SEGURIDAD OCI (Opcional - se genera automático) =====

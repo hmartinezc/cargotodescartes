@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  EJEMPLO DE REFERENCIA: XFZB House Manifest
+  TypeCode: 703 = House Manifest (FZB equivalente XML)
+  
+  Basado en el estándar IATA Cargo-XML 3.0
+  Referencia: riege/one-record-converter
+  
+  XFZB contiene:
+  - Referencia al Master AWB (MasterConsignment.TransportContractDocument)
+  - Múltiples IncludedHouseConsignment (uno por cada HAWB)
+  
+  Cada House tiene:
+  - TransportContractDocument con HAWB number
+  - Origin/Destination
+  - ConsignorParty (House Shipper)
+  - ConsigneeParty (House Consignee)
+  - Peso, piezas, descripción de mercancía
+  
+  NAMESPACE DIFERENTE:
+  - xmlns:iata="iata:housewaybill:1" (no waybill:1)
+-->
+<iata:XFZB xmlns:iata="iata:housewaybill:1" xmlns:ram="urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:21" xmlns:udt="urn:un:unece:uncefact:data:standard:UnqualifiedDataType:25">
+
+  <!-- Message Header -->
+  <MessageHeaderDocument>
+    <ID>MSG-180-99999999-FZB</ID>
+    <Name>XFZB</Name>
+    <!-- 703 = House Manifest -->
+    <TypeCode>703</TypeCode>
+    <IssueDateTime>2021-03-10T10:00:00Z</IssueDateTime>
+    <PurposeCode>Creation</PurposeCode>
+    <VersionID>3.00</VersionID>
+  </MessageHeaderDocument>
+
+  <!-- Business Header -->
+  <BusinessHeaderDocument>
+    <!-- ID es el HAWB del primer house o identificador único -->
+    <ID>HAWB-001</ID>
+    <IncludedHeaderNote>
+      <!-- H = House Waybill -->
+      <ContentCode>H</ContentCode>
+    </IncludedHeaderNote>
+    <SenderParty>
+      <PrimaryID schemeID="IATA-PIMA">REUFFW90AVTOPF/BOG01</PrimaryID>
+    </SenderParty>
+    <RecipientParty>
+      <PrimaryID schemeID="IATA-PIMA">USCAIR01LUXXSXS</PrimaryID>
+    </RecipientParty>
+  </BusinessHeaderDocument>
+
+  <!-- Master Consignment - Referencia al XFWB (Master AWB) -->
+  <!-- Este es el vínculo entre el House Manifest y el Master AWB -->
+  <MasterConsignment>
+    
+    <!-- CRÍTICO: TransportContractDocument vincula al Master AWB -->
+    <TransportContractDocument>
+      <ID>180-99999999</ID>
+    </TransportContractDocument>
+    
+    <!-- Origin / Destination del Master (repetido del XFWB) -->
+    <OriginLocation>
+      <ID>ORK</ID>
+      <Name>Cork Airport</Name>
+    </OriginLocation>
+    <FinalDestinationLocation>
+      <ID>PVG</ID>
+      <Name>Shanghai Pudong</Name>
+    </FinalDestinationLocation>
+    
+    <!-- ========================================================== -->
+    <!-- HOUSE 1: HAWB-001 -->
+    <!-- ========================================================== -->
+    <IncludedHouseConsignment>
+      
+      <!-- TransportContractDocument con el número del House Waybill -->
+      <TransportContractDocument>
+        <ID>HAWB-001</ID>
+      </TransportContractDocument>
+      
+      <!-- Totales del House -->
+      <TotalPieceQuantity>5</TotalPieceQuantity>
+      <TotalGrossWeightMeasure unitCode="KGM">250</TotalGrossWeightMeasure>
+      
+      <!-- Origin / Destination específico del House -->
+      <OriginLocation>
+        <ID>ORK</ID>
+        <Name>Cork</Name>
+      </OriginLocation>
+      <FinalDestinationLocation>
+        <ID>PVG</ID>
+        <Name>Shanghai</Name>
+      </FinalDestinationLocation>
+      
+      <!-- House Shipper (ConsignorParty) -->
+      <ConsignorParty>
+        <Name>HOUSE SHIPPER ONE</Name>
+        <PostalStructuredAddress>
+          <CityName>Cork</CityName>
+          <CountryID>IE</CountryID>
+        </PostalStructuredAddress>
+      </ConsignorParty>
+      
+      <!-- House Consignee (ConsigneeParty) -->
+      <ConsigneeParty>
+        <Name>HOUSE CONSIGNEE ONE</Name>
+        <PostalStructuredAddress>
+          <CityName>Shanghai</CityName>
+          <CountryID>CN</CountryID>
+        </PostalStructuredAddress>
+      </ConsigneeParty>
+      
+      <!-- Mercancía del House -->
+      <IncludedMasterConsignmentItem>
+        <SequenceNumeric>1</SequenceNumeric>
+        <GrossWeightMeasure unitCode="KGM">250</GrossWeightMeasure>
+        <PieceQuantity>5</PieceQuantity>
+        <NatureIdentificationTransportCargo>
+          <Identification>SPARE PARTS</Identification>
+        </NatureIdentificationTransportCargo>
+        <ApplicableCrossBorderRegulatoryProcedure>
+          <TariffCode>8421.21</TariffCode>
+        </ApplicableCrossBorderRegulatoryProcedure>
+      </IncludedMasterConsignmentItem>
+      
+    </IncludedHouseConsignment>
+    
+    <!-- ========================================================== -->
+    <!-- HOUSE 2: HAWB-002 -->
+    <!-- ========================================================== -->
+    <IncludedHouseConsignment>
+      
+      <!-- TransportContractDocument con el número del House Waybill -->
+      <TransportContractDocument>
+        <ID>HAWB-002</ID>
+      </TransportContractDocument>
+      
+      <!-- Totales del House -->
+      <TotalPieceQuantity>10</TotalPieceQuantity>
+      <TotalGrossWeightMeasure unitCode="KGM">792</TotalGrossWeightMeasure>
+      
+      <!-- Origin / Destination específico del House -->
+      <OriginLocation>
+        <ID>ORK</ID>
+        <Name>Cork</Name>
+      </OriginLocation>
+      <FinalDestinationLocation>
+        <ID>PVG</ID>
+        <Name>Shanghai</Name>
+      </FinalDestinationLocation>
+      
+      <!-- House Shipper (ConsignorParty) -->
+      <ConsignorParty>
+        <Name>HOUSE SHIPPER TWO</Name>
+        <PostalStructuredAddress>
+          <CityName>Dublin</CityName>
+          <CountryID>IE</CountryID>
+        </PostalStructuredAddress>
+      </ConsignorParty>
+      
+      <!-- House Consignee (ConsigneeParty) -->
+      <ConsigneeParty>
+        <Name>HOUSE CONSIGNEE TWO</Name>
+        <PostalStructuredAddress>
+          <CityName>Shanghai</CityName>
+          <CountryID>CN</CountryID>
+        </PostalStructuredAddress>
+      </ConsigneeParty>
+      
+      <!-- Mercancía del House -->
+      <IncludedMasterConsignmentItem>
+        <SequenceNumeric>1</SequenceNumeric>
+        <GrossWeightMeasure unitCode="KGM">792</GrossWeightMeasure>
+        <PieceQuantity>10</PieceQuantity>
+        <NatureIdentificationTransportCargo>
+          <Identification>ELECTRONIC COMPONENTS</Identification>
+        </NatureIdentificationTransportCargo>
+        <ApplicableCrossBorderRegulatoryProcedure>
+          <TariffCode>8542.31</TariffCode>
+        </ApplicableCrossBorderRegulatoryProcedure>
+      </IncludedMasterConsignmentItem>
+      
+    </IncludedHouseConsignment>
+    
+  </MasterConsignment>
+  
+</iata:XFZB>

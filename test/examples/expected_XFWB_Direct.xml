@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  EJEMPLO DE REFERENCIA: XFWB Directo (AWB sin Houses)
+  TypeCode: 740 = Direct Air Waybill
+  
+  Basado en el estándar IATA Cargo-XML 3.0
+  Referencia: riege/one-record-converter - 888-11111111_XFWB.xml
+  
+  Este archivo sirve como referencia visual para validar
+  la estructura del XML generado por DescartesXmlService
+-->
+<iata:XFWB xmlns:iata="iata:waybill:1" xmlns:ram="urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:21" xmlns:udt="urn:un:unece:uncefact:data:standard:UnqualifiedDataType:25">
+
+  <!-- Message Header -->
+  <MessageHeaderDocument>
+    <ID>MSG-888-11111111-TEST</ID>
+    <Name>XFWB</Name>
+    <!-- 740 = Direct AWB (sin houses) -->
+    <TypeCode>740</TypeCode>
+    <IssueDateTime>2021-03-10T10:00:00Z</IssueDateTime>
+    <PurposeCode>Creation</PurposeCode>
+    <VersionID>3.00</VersionID>
+  </MessageHeaderDocument>
+
+  <!-- Business Header -->
+  <BusinessHeaderDocument>
+    <ID>888-11111111</ID>
+    <IncludedHeaderNote>
+      <!-- M = Master AWB -->
+      <ContentCode>M</ContentCode>
+    </IncludedHeaderNote>
+    <SenderParty>
+      <PrimaryID schemeID="IATA-PIMA">REUFFW90AVTOPF/BOG01</PrimaryID>
+    </SenderParty>
+    <RecipientParty>
+      <PrimaryID schemeID="IATA-PIMA">USCAIR01LUXXSXS</PrimaryID>
+    </RecipientParty>
+  </BusinessHeaderDocument>
+
+  <!-- Master Consignment (AWB Content) -->
+  <MasterConsignment>
+    <TransportContractDocument>
+      <ID>888-11111111</ID>
+    </TransportContractDocument>
+    <ID>11111111</ID>
+    <TotalPieceQuantity>3</TotalPieceQuantity>
+    
+    <!-- No ConsolidationIndicator para Direct AWB -->
+    
+    <IncludedTareGrossWeightMeasure unitCode="KGM">1042</IncludedTareGrossWeightMeasure>
+    <TotalGrossWeightMeasure unitCode="KGM">1042</TotalGrossWeightMeasure>
+    <GrossVolumeMeasure unitCode="MTQ">2.602</GrossVolumeMeasure>
+    <TotalChargeableWeightMeasure unitCode="KGM">1042</TotalChargeableWeightMeasure>
+    
+    <!-- Origin / Destination -->
+    <OriginLocation>
+      <ID>ORK</ID>
+      <Name>Cork Airport</Name>
+    </OriginLocation>
+    <FinalDestinationLocation>
+      <ID>PVG</ID>
+      <Name>Shanghai Pudong</Name>
+    </FinalDestinationLocation>
+    
+    <!-- Payment Terms -->
+    <ApplicableFreightPayment>
+      <MethodCode>PP</MethodCode>
+    </ApplicableFreightPayment>
+    
+    <!-- Shipper (ConsignorParty) -->
+    <ConsignorParty>
+      <Name>SHIPPER COMPANY IRELAND</Name>
+      <DefinedTradeContact>
+        <DirectTelephoneCommunication>
+          <CompleteNumber>353123456789</CompleteNumber>
+        </DirectTelephoneCommunication>
+      </DefinedTradeContact>
+      <PostalStructuredAddress>
+        <PostcodeCode>ABCD</PostcodeCode>
+        <StreetName>Harbour Point Business Park</StreetName>
+        <CityName>LITTLE CITY</CityName>
+        <CountryID>IE</CountryID>
+      </PostalStructuredAddress>
+    </ConsignorParty>
+    
+    <!-- Consignee (ConsigneeParty) -->
+    <ConsigneeParty>
+      <Name>FORWARDER COMPANY SHANGHAI LTD</Name>
+      <DefinedTradeContact>
+        <DirectTelephoneCommunication>
+          <CompleteNumber>862123454321</CompleteNumber>
+        </DirectTelephoneCommunication>
+      </DefinedTradeContact>
+      <PostalStructuredAddress>
+        <StreetName>SUHANG RD PUDONG AIRPORT</StreetName>
+        <CityName>SHANGHAI</CityName>
+        <CountryID>CN</CountryID>
+      </PostalStructuredAddress>
+    </ConsigneeParty>
+    
+    <!-- Freight Forwarder / Agent -->
+    <FreightForwarderParty>
+      <Name>FORWARDER COMPANY IRELAND LIMITED</Name>
+      <CargoAgentID>3456789</CargoAgentID>
+      <FreightForwarderAddress>
+        <CityName>Little City</CityName>
+      </FreightForwarderAddress>
+    </FreightForwarderParty>
+    
+    <!-- Flights / Transport Movements -->
+    <SpecifiedLogisticsTransportMovement>
+      <StageCode>Main-Carriage</StageCode>
+      <ModeCode>4</ModeCode>
+      <ID>XX8012</ID>
+      <SequenceNumeric>1</SequenceNumeric>
+      <DepartureEvent>
+        <ScheduledOccurrenceDateTime>2021-03-10</ScheduledOccurrenceDateTime>
+        <OccurrenceArrivalLocation>
+          <ID>ORK</ID>
+          <Name>Cork</Name>
+        </OccurrenceArrivalLocation>
+      </DepartureEvent>
+      <ArrivalEvent>
+        <OccurrenceArrivalLocation>
+          <ID>DUB</ID>
+          <Name>Dublin</Name>
+        </OccurrenceArrivalLocation>
+      </ArrivalEvent>
+    </SpecifiedLogisticsTransportMovement>
+    
+    <SpecifiedLogisticsTransportMovement>
+      <StageCode>Main-Carriage</StageCode>
+      <ModeCode>4</ModeCode>
+      <ID>XX345</ID>
+      <SequenceNumeric>2</SequenceNumeric>
+      <DepartureEvent>
+        <ScheduledOccurrenceDateTime>2021-03-12</ScheduledOccurrenceDateTime>
+        <OccurrenceArrivalLocation>
+          <ID>DUB</ID>
+          <Name>Dublin</Name>
+        </OccurrenceArrivalLocation>
+      </DepartureEvent>
+      <ArrivalEvent>
+        <OccurrenceArrivalLocation>
+          <ID>AUH</ID>
+          <Name>Abu Dhabi</Name>
+        </OccurrenceArrivalLocation>
+      </ArrivalEvent>
+    </SpecifiedLogisticsTransportMovement>
+    
+    <!-- Rates and Charges -->
+    <ApplicableRating>
+      <TotalChargeAmount currencyID="EUR">4626.48</TotalChargeAmount>
+      <ConsignmentItemQuantity>1</ConsignmentItemQuantity>
+      <IncludedRatedShipment>
+        <TypeCode>M</TypeCode>
+        <ApplicableRating>
+          <ChargeableWeightMeasure unitCode="KGM">1042</ChargeableWeightMeasure>
+          <AppliedRate>4.44</AppliedRate>
+          <TotalChargeAmount currencyID="EUR">4626.48</TotalChargeAmount>
+        </ApplicableRating>
+        <GoodsDescription>CONSOLIDATION
+AS PER ATTACHED
+MANIFEST
+SECURE CARGO</GoodsDescription>
+        <TariffClassCode>M</TariffClassCode>
+        <PieceQuantity>3</PieceQuantity>
+        <GrossWeightMeasure unitCode="KGM">1042</GrossWeightMeasure>
+      </IncludedRatedShipment>
+    </ApplicableRating>
+    
+    <!-- Special Handling -->
+    <HandlingInstructions>
+      <DescriptionCode>GEN</DescriptionCode>
+    </HandlingInstructions>
+    
+    <!-- OCI (Other Customs Information) -->
+    <IncludedCustomsNote>
+      <CountryID>IE</CountryID>
+      <SubjectCode>SHP</SubjectCode>
+      <ContentCode>T</ContentCode>
+      <Content>IE1234567N</Content>
+    </IncludedCustomsNote>
+    
+    <!-- Signature / Execution -->
+    <SignatoryCarrierAuthentication>
+      <Signatory>MARK USER</Signatory>
+      <ActualDateTime>2021-03-10</ActualDateTime>
+      <IssueAuthenticationLocation>
+        <Name>ORK</Name>
+      </IssueAuthenticationLocation>
+    </SignatoryCarrierAuthentication>
+    
+  </MasterConsignment>
+  
+</iata:XFWB>

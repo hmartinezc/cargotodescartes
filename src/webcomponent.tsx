@@ -1,21 +1,24 @@
 /**
  * ============================================================
- * TRAXON CONNECTOR WEB COMPONENT
+ * CARGO-IMP EDI WEB COMPONENT
  * ============================================================
- * Este archivo convierte la aplicación React en un Web Component
+ * Este archivo convierte la aplicación Preact en un Web Component
  * con Shadow DOM para embeberse en ASP.NET Razor Pages sin
  * conflictos de estilos.
+ * 
+ * Genera mensajes EDI (FWB/FHL) en formato CARGO-IMP para
+ * copiar y enviar manualmente via comunicación con aerolíneas.
  * 
  * USO DESDE RAZOR PAGES:
  * 
  * 1. Incluir el script:
- *    <script src="traxon-connector.js"></script>
+ *    <script src="cargo-imp-connector.js"></script>
  * 
  * 2. Agregar el componente:
- *    <traxon-connector id="traxonModal"></traxon-connector>
+ *    <cargo-imp-connector id="ediModal"></cargo-imp-connector>
  * 
  * 3. Abrir el modal con datos:
- *    document.getElementById('traxonModal').openWithShipment({
+ *    document.getElementById('ediModal').openWithShipment({
  *      awbNumber: '145-12345678',
  *      origin: 'BOG',
  *      destination: 'MIA',
@@ -23,7 +26,7 @@
  *    });
  * 
  * 4. O abrir con datos de demo:
- *    document.getElementById('traxonModal').open();
+ *    document.getElementById('ediModal').open();
  * ============================================================
  */
 
@@ -31,38 +34,28 @@ import { FunctionComponent } from 'preact';
 import { useState, useCallback, useEffect } from 'preact/hooks';
 import { render } from 'preact';
 import { InternalShipment, ShipmentStatus, TransmissionLog, loadConnectorConfig, saveConnectorConfig, ConnectorConfig, DEFAULT_CONNECTOR_CONFIG } from '../types';
-import { ChampModal } from '../components/ChampModal';
-import { TraxonSendResult, UAT_CONFIG, saveApiConfig, getApiConfig, ApiConfig } from '../services/traxonApiClient';
+import { ChampModal, CargoImpResult } from '../components/ChampModal';
 import { mockShipments } from '../mockData';
 import { Plane, Package, MapPin, Building, User, Scale, Layers, Send, ChevronRight, X } from 'lucide-preact';
 import tailwindStyles from './index.css?inline';
 
 // ============================================================
-// INTERFAZ PARA RESULTADO DE TRANSMISIÓN
+// INTERFAZ PARA RESULTADO DE COPIA EDI
 // ============================================================
-export interface TransmissionResult {
-  success: boolean;           // true = transmisión exitosa, false = error
-  awbNumber: string;          // Número de AWB transmitido
-  timestamp: string;          // Fecha/hora ISO de la transmisión
-  summary: string;            // Mensaje descriptivo del resultado
-  httpStatus?: number;        // Código HTTP de respuesta
+export interface CopyResult {
+  success: boolean;           // true = EDI copiado correctamente
+  awbNumber: string;          // Número de AWB
+  timestamp: string;          // Fecha/hora ISO
+  summary: string;            // Mensaje descriptivo
+  ediContent?: string;        // Contenido EDI copiado (FWB + FHL)
 }
 
 // ============================================================
-// INTERFAZ PARA DATOS DE ENTRADA CON CONFIGURACIÓN
+// INTERFAZ PARA DATOS DE ENTRADA
 // ============================================================
 export interface ShipmentInputData extends Partial<InternalShipment> {
-  // Configuración opcional de API (si se pasa, sobrescribe la guardada)
-  apiConfig?: {
-    endpoint?: string;        // URL del endpoint Traxon
-    password?: string;        // Contraseña del cliente
-    senderAddress?: string;   // Dirección PIMA del agente (emisor)
-    recipientAddress?: string; // Dirección PIMA de la aerolínea (receptor)
-  };
-  
-  // Callback opcional para recibir el resultado de la transmisión
-  // Se llama cuando el usuario hace clic en "Transmitir" y se completa (éxito o error)
-  onTransmitResult?: (result: TransmissionResult) => void;
+  // Callback opcional para recibir el resultado cuando se copia EDI
+  onCopyResult?: (result: CopyResult) => void;
 }
 
 // ============================================================
@@ -93,7 +86,7 @@ const STRUCTURAL_STYLES = `
 }
 
 /* Contenedor raíz del portal */
-#traxon-portal-mount {
+#cargo-imp-portal-mount {
   position: fixed !important;
   top: 0 !important;
   left: 0 !important;
@@ -105,8 +98,8 @@ const STRUCTURAL_STYLES = `
   pointer-events: none !important;
 }
 
-#traxon-portal-mount:has(.modal-overlay),
-#traxon-portal-mount:has(.fixed) {
+#cargo-imp-portal-mount:has(.modal-overlay),
+#cargo-imp-portal-mount:has(.fixed) {
   pointer-events: auto !important;
 }
 
@@ -555,24 +548,27 @@ const CompactAwbView: FunctionComponent<CompactAwbViewProps> = ({ shipment, onOp
 // ============================================================
 // COMPONENTE WRAPPER INTERNO
 // ============================================================
-interface TraxonConnectorAppProps {
+interface CargoImpConnectorAppProps {
   initialShipment?: Partial<InternalShipment> | null;
-  initialShipments?: Partial<InternalShipment>[] | null; // NUEVO: Array de shipments
+  initialShipments?: Partial<InternalShipment>[] | null;
   onClose: () => void;
   isVisible: boolean;
-  onTransmitResult?: (success: boolean, awbNumber: string, details: {
+  onCopyResult?: (success: boolean, awbNumber: string, details: {
     timestamp: string;
     summary: string;
-    httpStatus?: number;
-  }) => void; // Callback para notificar resultado de transmisión
+    ediContent?: string;
+  }) => void;
+  /** Callback cuando el usuario guarda la configuración desde el panel */
+  onSaveConfig?: (config: ConnectorConfig) => void;
 }
 
-const TraxonConnectorApp: FunctionComponent<TraxonConnectorAppProps> = ({ 
+const CargoImpConnectorApp: FunctionComponent<CargoImpConnectorAppProps> = ({ 
   initialShipment,
   initialShipments,
   onClose,
   isVisible,
-  onTransmitResult
+  onCopyResult,
+  onSaveConfig
 }) => {
   const [shipments, setShipments] = useState<InternalShipment[]>([]);
   const [selectedShipment, setSelectedShipment] = useState<InternalShipment | null>(null);
@@ -624,22 +620,20 @@ const TraxonConnectorApp: FunctionComponent<TraxonConnectorAppProps> = ({
     setSelectedShipment(updated);
   }, []);
 
-  const handleTransmit = useCallback((id: string, payloadJson: string, traxonResult?: TraxonSendResult) => {
+  // Handler cuando se copia EDI exitosamente
+  const handleCopyResult = useCallback((id: string, ediContent: string) => {
     const logId = `log-${Date.now()}`;
     const timestamp = new Date().toISOString();
-    const isSuccess = traxonResult?.allSuccess ?? false;
-    const responseMessage = traxonResult?.summary || 'Envío procesado';
-    const awbStatus = traxonResult?.awbMessage?.statusCode || 0;
 
     // Obtener AWB number del shipment actual
     const currentAwb = selectedShipment?.awbNumber || '';
 
-    // NOTIFICAR RESULTADO A LA APLICACIÓN PADRE (Razor/Vue)
-    if (onTransmitResult) {
-      onTransmitResult(isSuccess, currentAwb, {
+    // Notificar resultado a la aplicación padre (Razor/Vue)
+    if (onCopyResult) {
+      onCopyResult(true, currentAwb, {
         timestamp,
-        summary: responseMessage,
-        httpStatus: awbStatus
+        summary: 'EDI copiado al portapapeles',
+        ediContent
       });
     }
 
@@ -647,35 +641,22 @@ const TraxonConnectorApp: FunctionComponent<TraxonConnectorAppProps> = ({
       id: logId,
       timestamp,
       type: 'OUTBOUND',
-      status: isSuccess ? 'ACCEPTED' : 'REJECTED',
-      payloadJson,
-      responseMessage,
+      status: 'ACCEPTED',
+      payloadJson: ediContent,
+      responseMessage: 'EDI copiado exitosamente',
       responseTimestamp: new Date().toISOString()
     };
-
-    const finalStatus: ShipmentStatus = isSuccess ? 'ACKNOWLEDGED' : 'REJECTED';
     
     setShipments(prev => prev.map(s => {
       if (s.id !== id) return s;
       return {
         ...s,
-        status: finalStatus,
-        traxonResponse: `${responseMessage} (HTTP ${awbStatus})`,
         logs: [newLog, ...(s.logs || [])]
       };
     }));
 
-    if (selectedShipment && selectedShipment.id === id) {
-      setSelectedShipment(prev => prev ? ({
-        ...prev,
-        status: finalStatus,
-        traxonResponse: `${responseMessage} (HTTP ${awbStatus})`,
-        logs: [newLog, ...(prev.logs || [])]
-      }) : null);
-    }
-
-    console.log(`✅ Shipment ${id} actualizado: ${finalStatus}`);
-  }, [selectedShipment, onTransmitResult]);
+    console.log(`✅ EDI copiado para shipment ${id}`);
+  }, [selectedShipment, onCopyResult]);
 
   const handleCloseModal = useCallback(() => {
     setIsModalOpen(false);
@@ -716,7 +697,8 @@ const TraxonConnectorApp: FunctionComponent<TraxonConnectorAppProps> = ({
         onClose={handleCloseModal}
         shipment={selectedShipment}
         onSave={handleSaveShipment}
-        onTransmitSuccess={handleTransmit}
+        onCopySuccess={handleCopyResult}
+        onSaveConfig={onSaveConfig}
       />
     );
   }
@@ -734,7 +716,8 @@ const TraxonConnectorApp: FunctionComponent<TraxonConnectorAppProps> = ({
         onClose={handleCloseModal}
         shipment={selectedShipment}
         onSave={handleSaveShipment}
-        onTransmitSuccess={handleTransmit}
+        onCopySuccess={handleCopyResult}
+        onSaveConfig={onSaveConfig}
       />
     </>
   );
@@ -1188,7 +1171,8 @@ function createShipmentFromPartial(partial: Partial<InternalShipment>): Internal
     executionDate: partial.executionDate || new Date().toISOString().split('T')[0],
     executionPlace: partial.executionPlace || 'BOGOTA',
     signature: partial.signature || 'AVTOPF',
-    hasHouses: partial.hasHouses ?? false,
+    // IMPORTANTE: Inferir hasHouses automáticamente si hay houseBills con datos
+    hasHouses: partial.hasHouses ?? (normalizedHouses.length > 0),
     houseBills: normalizedHouses,
     logs: partial.logs || []
   };
@@ -1197,18 +1181,18 @@ function createShipmentFromPartial(partial: Partial<InternalShipment>): Internal
 // ============================================================
 // WEB COMPONENT CLASS
 // ============================================================
-class TraxonConnectorElement extends HTMLElement {
+class CargoImpConnectorElement extends HTMLElement {
   private portalMountRef: HTMLDivElement | null = null;
   private shadowRoot_: ShadowRoot;
   private isVisible: boolean = false;
   private currentShipment: Partial<InternalShipment> | null = null;
-  private currentShipments: Partial<InternalShipment>[] | null = null; // NUEVO: Array de shipments
+  private currentShipments: Partial<InternalShipment>[] | null = null;
   private mountPoint: HTMLDivElement;
   private portalContainer: HTMLDivElement | null = null;
   private portalShadow: ShadowRoot | null = null;
   
-  // Callback para notificar resultado de transmisión (pasado via openWithShipment)
-  private transmitResultCallback: ((result: TransmissionResult) => void) | null = null;
+  // Callback para notificar resultado de copia EDI
+  private copyResultCallback: ((result: CopyResult) => void) | null = null;
 
   constructor() {
     super();
@@ -1218,7 +1202,7 @@ class TraxonConnectorElement extends HTMLElement {
     
     // Crear punto de montaje dentro del shadow
     this.mountPoint = document.createElement('div');
-    this.mountPoint.id = 'traxon-connector-root';
+    this.mountPoint.id = 'cargo-imp-connector-root';
     this.shadowRoot_.appendChild(this.mountPoint);
   }
 
@@ -1230,7 +1214,7 @@ class TraxonConnectorElement extends HTMLElement {
     if (!this.portalContainer) {
       // Crear contenedor en el body
       this.portalContainer = document.createElement('div');
-      this.portalContainer.id = 'traxon-connector-portal';
+      this.portalContainer.id = 'cargo-imp-connector-portal';
       this.portalContainer.style.cssText = `
         position: fixed !important;
         top: 0 !important;
@@ -1254,7 +1238,7 @@ class TraxonConnectorElement extends HTMLElement {
       
       // Crear punto de montaje en el shadow del portal
       const portalMount = document.createElement('div');
-      portalMount.id = 'traxon-portal-mount';
+      portalMount.id = 'cargo-imp-portal-mount';
       this.portalShadow.appendChild(portalMount);
     }
     
@@ -1274,7 +1258,7 @@ class TraxonConnectorElement extends HTMLElement {
   connectedCallback() {
     // Montar Preact - usamos el portal para mejor z-index
     const { shadow } = this.getOrCreatePortal();
-    const portalMount = shadow.getElementById('traxon-portal-mount') as HTMLDivElement;
+    const portalMount = shadow.getElementById('cargo-imp-portal-mount') as HTMLDivElement;
     
     if (portalMount) {
       this.portalMountRef = portalMount;
@@ -1303,31 +1287,42 @@ class TraxonConnectorElement extends HTMLElement {
     
     if (this.portalMountRef) {
       render(
-        <TraxonConnectorApp
+        <CargoImpConnectorApp
             initialShipment={this.currentShipment}
             initialShipments={this.currentShipments}
             onClose={() => this.close()}
             isVisible={this.isVisible}
-            onTransmitResult={(success, awbNumber, details) => {
+            onCopyResult={(success, awbNumber, details) => {
               // Crear objeto de resultado
-              const result: TransmissionResult = {
+              const result: CopyResult = {
                 success,
                 awbNumber,
                 timestamp: details.timestamp,
                 summary: details.summary,
-                httpStatus: details.httpStatus
+                ediContent: details.ediContent
               };
               
               // 1. Llamar callback si fue pasado en openWithShipment
-              if (this.transmitResultCallback) {
-                this.transmitResultCallback(result);
+              if (this.copyResultCallback) {
+                this.copyResultCallback(result);
               }
               
-              // 2. También disparar evento CustomEvent (para quienes usen addEventListener)
-              this.dispatchEvent(new CustomEvent('traxon-transmission-result', { 
+              // 2. También disparar evento CustomEvent
+              this.dispatchEvent(new CustomEvent('cargo-imp-copy-result', { 
                 detail: result,
                 bubbles: true,
                 composed: true 
+              }));
+            }}
+            onSaveConfig={(config) => {
+              // Disparar evento con la configuración completa para guardar en BD
+              this.dispatchEvent(new CustomEvent('cargo-imp-config-saved', {
+                detail: { 
+                  config,
+                  timestamp: new Date().toISOString()
+                },
+                bubbles: true,
+                composed: true
               }));
             }}
           />,
@@ -1343,36 +1338,29 @@ class TraxonConnectorElement extends HTMLElement {
   /**
    * Abre el modal con un shipment específico (una sola AWB)
    * @param shipmentData - Datos del AWB (puede ser parcial, se completan con defaults)
-   *                       También puede incluir:
-   *                       - apiConfig: para sobrescribir endpoint/password/PIMA
-   *                       - onTransmitResult: callback que se llama cuando se transmite (éxito o error)
+   *                       Puede incluir onCopyResult callback
    * 
    * EJEMPLO DE USO CON CALLBACK:
-   * traxonModal.openWithShipment({
+   * ediModal.openWithShipment({
    *   awbNumber: '145-12345678',
    *   origin: 'BOG',
-   *   onTransmitResult: (result) => {
+   *   onCopyResult: (result) => {
    *     if (result.success) {
-   *       // Guardar en BD: result.awbNumber, result.timestamp
+   *       console.log('EDI copiado:', result.ediContent);
    *     }
    *   }
    * });
    */
   openWithShipment(shipmentData: ShipmentInputData) {
-    // Si viene configuración de API en el JSON, guardarla
-    if (shipmentData.apiConfig) {
-      this.setApiConfig(shipmentData.apiConfig);
-    }
-    
     // Guardar callback si viene
-    if (shipmentData.onTransmitResult) {
-      this.transmitResultCallback = shipmentData.onTransmitResult;
+    if (shipmentData.onCopyResult) {
+      this.copyResultCallback = shipmentData.onCopyResult;
     } else {
-      this.transmitResultCallback = null;
+      this.copyResultCallback = null;
     }
     
-    // Extraer solo los datos del shipment (sin apiConfig ni callback)
-    const { apiConfig, onTransmitResult, ...shipmentOnly } = shipmentData;
+    // Extraer solo los datos del shipment (sin callback)
+    const { onCopyResult, ...shipmentOnly } = shipmentData;
     
     this.currentShipment = shipmentOnly;
     this.currentShipments = null;
@@ -1381,27 +1369,21 @@ class TraxonConnectorElement extends HTMLElement {
     this.renderApp();
     
     // Disparar evento
-    this.dispatchEvent(new CustomEvent('traxon-opened', { 
-      detail: { shipment: shipmentOnly, mode: 'single', hasApiConfig: !!apiConfig },
+    this.dispatchEvent(new CustomEvent('cargo-imp-opened', { 
+      detail: { shipment: shipmentOnly, mode: 'single' },
       bubbles: true,
       composed: true 
     }));
   }
 
   /**
-   * NUEVO: Abre el modal con múltiples shipments (lista con buscador)
+   * Abre el modal con múltiples shipments (lista con buscador)
    * @param shipmentsData - Array de AWBs (pueden ser parciales)
-   * @param apiConfig - Configuración opcional de API para todos los shipments
    */
-  openWithShipments(shipmentsData: ShipmentInputData[], apiConfig?: Partial<ApiConfig>) {
-    // Si viene configuración de API, guardarla
-    if (apiConfig) {
-      this.setApiConfig(apiConfig);
-    }
-    
-    // Limpiar apiConfig de cada shipment
+  openWithShipments(shipmentsData: ShipmentInputData[]) {
+    // Limpiar callbacks de cada shipment
     const shipmentsOnly = shipmentsData.map(s => {
-      const { apiConfig: _, ...shipmentOnly } = s;
+      const { onCopyResult, ...shipmentOnly } = s;
       return shipmentOnly;
     });
     
@@ -1412,7 +1394,7 @@ class TraxonConnectorElement extends HTMLElement {
     this.renderApp();
     
     // Disparar evento
-    this.dispatchEvent(new CustomEvent('traxon-opened', { 
+    this.dispatchEvent(new CustomEvent('cargo-imp-opened', { 
       detail: { shipments: shipmentsOnly, mode: 'multiple', count: shipmentsOnly.length },
       bubbles: true,
       composed: true 
@@ -1429,7 +1411,7 @@ class TraxonConnectorElement extends HTMLElement {
     this.setAttribute('data-visible', 'true');
     this.renderApp();
     
-    this.dispatchEvent(new CustomEvent('traxon-opened', { 
+    this.dispatchEvent(new CustomEvent('cargo-imp-opened', { 
       detail: { shipment: null, usingDemo: true },
       bubbles: true,
       composed: true 
@@ -1446,7 +1428,7 @@ class TraxonConnectorElement extends HTMLElement {
     this.removeAttribute('data-visible');
     this.renderApp();
     
-    this.dispatchEvent(new CustomEvent('traxon-closed', { 
+    this.dispatchEvent(new CustomEvent('cargo-imp-closed', { 
       bubbles: true,
       composed: true 
     }));
@@ -1455,49 +1437,48 @@ class TraxonConnectorElement extends HTMLElement {
   /**
    * Obtiene la configuración actual del conector
    */
+  /**
+   * Obtiene la configuración actual del conector
+   */
   getConfig(): ConnectorConfig {
     return loadConnectorConfig();
   }
 
   /**
-   * Configura los parámetros de conexión a la API de Traxon
-   * @param config - endpoint, password, senderAddress (PIMA emisor), recipientAddress (PIMA receptor)
+   * Carga configuración desde un JSON externo (ej: desde tu base de datos)
+   * Usar al abrir el componente para restaurar la configuración del usuario
+   * 
+   * EJEMPLO DE USO EN RAZOR:
+   * ```javascript
+   * // Al cargar la página, obtener config de tu BD
+   * const savedConfig = await fetch('/api/obtener-politicas').then(r => r.json());
+   * 
+   * // Cargar en el componente
+   * document.getElementById('ediModal').loadConfig(savedConfig);
+   * ```
+   * 
+   * @param config - JSON de configuración (puede ser parcial, se mergea con defaults)
    */
-  setApiConfig(config: Partial<ApiConfig>) {
-    saveApiConfig(config);
+  loadConfig(config: Partial<ConnectorConfig>): void {
+    const current = loadConnectorConfig();
+    const merged = { ...current, ...config };
+    saveConnectorConfig(merged);
     
-    this.dispatchEvent(new CustomEvent('traxon-api-config-updated', { 
-      detail: { 
-        endpoint: config.endpoint ? '***configured***' : undefined,
-        password: config.password ? '***configured***' : undefined,
-        senderAddress: config.senderAddress,
-        recipientAddress: config.recipientAddress
-      },
+    // Re-renderizar para aplicar la nueva configuración
+    this.renderApp();
+    
+    this.dispatchEvent(new CustomEvent('cargo-imp-config-loaded', { 
+      detail: { config: merged },
       bubbles: true,
       composed: true 
     }));
   }
 
   /**
-   * Obtiene la configuración actual de la API
-   */
-  getApiConfig(): ApiConfig {
-    return getApiConfig();
-  }
-
-  /**
-   * Actualiza la configuración del conector (endpoint, password, etc.)
+   * Actualiza la configuración del conector (alias de loadConfig para compatibilidad)
    */
   setConfig(config: Partial<ConnectorConfig>) {
-    const current = loadConnectorConfig();
-    const updated = { ...current, ...config };
-    saveConnectorConfig(updated);
-    
-    this.dispatchEvent(new CustomEvent('traxon-config-updated', { 
-      detail: { config: updated },
-      bubbles: true,
-      composed: true 
-    }));
+    this.loadConfig(config);
   }
 
   /**
@@ -1506,7 +1487,7 @@ class TraxonConnectorElement extends HTMLElement {
   resetConfig() {
     saveConnectorConfig(DEFAULT_CONNECTOR_CONFIG);
     
-    this.dispatchEvent(new CustomEvent('traxon-config-reset', { 
+    this.dispatchEvent(new CustomEvent('cargo-imp-config-reset', { 
       bubbles: true,
       composed: true 
     }));
@@ -1523,23 +1504,23 @@ class TraxonConnectorElement extends HTMLElement {
 // ============================================================
 // REGISTRAR WEB COMPONENT
 // ============================================================
-if (!customElements.get('traxon-connector')) {
-  customElements.define('traxon-connector', TraxonConnectorElement);
+if (!customElements.get('cargo-imp-connector')) {
+  customElements.define('cargo-imp-connector', CargoImpConnectorElement);
 }
 
 // Exportar para uso programático
-export { TraxonConnectorElement };
-export default TraxonConnectorElement;
+export { CargoImpConnectorElement };
+export default CargoImpConnectorElement;
 
 // Declaración de tipos para TypeScript en el host
 declare global {
   interface HTMLElementTagNameMap {
-    'traxon-connector': TraxonConnectorElement;
+    'cargo-imp-connector': CargoImpConnectorElement;
   }
   
   namespace preact.JSX {
     interface IntrinsicElements {
-      'traxon-connector': JSX.HTMLAttributes<TraxonConnectorElement>;
+      'cargo-imp-connector': JSX.HTMLAttributes<CargoImpConnectorElement>;
     }
   }
 }

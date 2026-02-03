@@ -60,7 +60,13 @@
 
   "routing": {
     "senderAddress": "REUFFW90AVTOPF/BOG01",
-    "recipientAddress": "USCAIR01LUXXSXS"
+    "recipientAddress": "TDVAIR08DHV"
+  },
+
+  "descartesConfig": {
+    "endpoint": "https://wwwtest.myvan.descartes.com/HttpUpload/SimpleUploadHandler.aspx",
+    "username": "jgamboa3@gln.com",
+    "password": "Avatar4570!"
   },
 
   "flights": [

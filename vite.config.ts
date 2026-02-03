@@ -32,8 +32,8 @@ export default defineConfig(({ mode }) => {
         build: {
           lib: {
             entry: path.resolve(__dirname, 'src/webcomponent.tsx'),
-            name: 'TraxonConnector',
-            fileName: () => 'traxon-connector.js',
+            name: 'CargoImpConnector',
+            fileName: () => 'cargo-imp-connector.js',
             formats: ['iife'] // Inmediately Invoked Function Expression - un solo archivo
           },
           rollupOptions: {
@@ -43,10 +43,10 @@ export default defineConfig(({ mode }) => {
               // No generar chunks separados
               manualChunks: undefined,
               // Nombre del archivo
-              entryFileNames: 'traxon-connector.js',
+              entryFileNames: 'cargo-imp-connector.js',
               // Sin CSS externo - todo embebido
               assetFileNames: (assetInfo) => {
-                if (assetInfo.name === 'style.css') return 'traxon-connector.css';
+                if (assetInfo.name === 'style.css') return 'cargo-imp-connector.css';
                 return assetInfo.name || 'asset';
               }
             }
