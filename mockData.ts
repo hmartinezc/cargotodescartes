@@ -142,6 +142,14 @@ export const mockShipments: InternalShipment[] = [
       }
     ],
 
+    // Configuración Descartes para testing (en producción viene del backend)
+    descartesConfig: {
+      endpoint: 'https://wwwtest.myvan.descartes.com/HttpUpload/SimpleUploadHandler.aspx',
+      username: 'jgamboa3@gln.com',
+      password: 'Avatar4570!',
+      enabled: true
+    },
+
     logs: []
   },
 
@@ -252,6 +260,14 @@ export const mockShipments: InternalShipment[] = [
       }
     ],
 
+    // Configuración Descartes para testing (en producción viene del backend)
+    descartesConfig: {
+      endpoint: 'https://wwwtest.myvan.descartes.com/HttpUpload/SimpleUploadHandler.aspx',
+      username: 'jgamboa3@gln.com',
+      password: 'Avatar4570!',
+      enabled: true
+    },
+
     logs: []
   },
 
@@ -354,6 +370,14 @@ export const mockShipments: InternalShipment[] = [
         carrierCode: 'IB'
       }
     ],
+
+    // Configuración Descartes para testing (en producción viene del backend)
+    descartesConfig: {
+      endpoint: 'https://wwwtest.myvan.descartes.com/HttpUpload/SimpleUploadHandler.aspx',
+      username: 'jgamboa3@gln.com',
+      password: 'Avatar4570!',
+      enabled: true
+    },
 
     logs: []
   }

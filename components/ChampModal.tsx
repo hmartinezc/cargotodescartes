@@ -1360,7 +1360,7 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
                         <button 
                           onClick={handleTransmitToDescartes}
                           disabled={!cargoImpFwb?.fullMessage || isTransmitting}
-                          className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-6 py-3 rounded-lg flex items-center gap-2 font-bold transition-all shadow-lg hover:shadow-xl"
+                          className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white px-6 py-3 rounded-lg flex items-center gap-2 font-bold transition-all shadow-lg hover:shadow-xl"
                         >
                           {isTransmitting ? (
                             <>
