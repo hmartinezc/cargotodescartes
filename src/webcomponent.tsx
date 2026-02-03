@@ -1174,7 +1174,9 @@ function createShipmentFromPartial(partial: Partial<InternalShipment>): Internal
     // IMPORTANTE: Inferir hasHouses automáticamente si hay houseBills con datos
     hasHouses: partial.hasHouses ?? (normalizedHouses.length > 0),
     houseBills: normalizedHouses,
-    logs: partial.logs || []
+    logs: partial.logs || [],
+    // Configuración de Descartes para transmisión directa (opcional)
+    descartesConfig: partial.descartesConfig
   };
 }
 
@@ -1504,8 +1506,16 @@ class CargoImpConnectorElement extends HTMLElement {
 // ============================================================
 // REGISTRAR WEB COMPONENT
 // ============================================================
+// Registrar con nombre principal: traxon-connector
+if (!customElements.get('traxon-connector')) {
+  customElements.define('traxon-connector', CargoImpConnectorElement);
+}
+
+// También registrar alias legacy: cargo-imp-connector (para compatibilidad)
 if (!customElements.get('cargo-imp-connector')) {
-  customElements.define('cargo-imp-connector', CargoImpConnectorElement);
+  // Crear una clase que extiende la original para el alias
+  class CargoImpConnectorAlias extends CargoImpConnectorElement {}
+  customElements.define('cargo-imp-connector', CargoImpConnectorAlias);
 }
 
 // Exportar para uso programático
@@ -1515,11 +1525,13 @@ export default CargoImpConnectorElement;
 // Declaración de tipos para TypeScript en el host
 declare global {
   interface HTMLElementTagNameMap {
+    'traxon-connector': CargoImpConnectorElement;
     'cargo-imp-connector': CargoImpConnectorElement;
   }
   
   namespace preact.JSX {
     interface IntrinsicElements {
+      'traxon-connector': JSX.HTMLAttributes<CargoImpConnectorElement>;
       'cargo-imp-connector': JSX.HTMLAttributes<CargoImpConnectorElement>;
     }
   }
