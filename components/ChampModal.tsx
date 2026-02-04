@@ -775,10 +775,10 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
   // ============================================================
   // MEMO: Generación EDI para CARGO-IMP
   // Dependencias: configVersion para forzar re-generación cuando se toggle un segmento
+  // Se genera siempre (no solo en tab json) para que los botones de copiar/transmitir funcionen
   // ============================================================
   const cargoImpGenerationResult = useMemo(() => {
     if (!formData) return { fwbMessage: null, fhlMessages: null, concatenatedFhl: null, policyInfo: null, error: null };
-    if (activeTab !== 'json') return { fwbMessage: null, fhlMessages: null, concatenatedFhl: null, policyInfo: null, error: null };
     
     try {
       // Obtener información de la política que se usará
@@ -814,7 +814,7 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
       console.error('[CARGO-IMP Generation Error]', e);
       return { fwbMessage: null, fhlMessages: null, concatenatedFhl: null, policyInfo: null, error: e.message || 'Error generando EDI' };
     }
-  }, [activeTab, formData, selectedProvider, configVersion]);
+  }, [formData, selectedProvider, configVersion]);
 
   const { fwbMessage: cargoImpFwb, fhlMessages: cargoImpFhl, concatenatedFhl: cargoImpConcatFhl, policyInfo: cargoImpPolicyInfo, error: cargoImpGenError } = cargoImpGenerationResult;
 
