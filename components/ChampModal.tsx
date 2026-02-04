@@ -693,6 +693,7 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
   const [isSending, setIsSending] = useState(false);
   const [sendResult, setSendResult] = useState<CargoImpResult | null>(null);
   const [sendMode, setSendMode] = useState<'masterOnly' | 'masterAndHouses'>('masterAndHouses');
+  const [messageFormat, setMessageFormat] = useState<'cargoxml' | 'edi'>('cargoxml');
   const [activeParty, setActiveParty] = useState<'shipper' | 'consignee'>('shipper');
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [connectorConfig, setConnectorConfig] = useState<ConnectorConfig>(() => loadConnectorConfig());
@@ -766,10 +767,12 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
     if (shipment) {
       setFormData(deepClone(shipment));
       setActiveJsonTab('fwb');
+      setActiveXmlTab('xfwb');
       setActiveTab('parties');
       setValidationErrors([]);
       setSendResult(null);
       setSendMode('masterAndHouses');
+      setMessageFormat('cargoxml');
       setActiveParty('shipper');
       // Resetear houses expandidos al cambiar de shipment
       setExpandedHouses(new Set());
@@ -934,9 +937,13 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
               formData?.descartesConfig?.password);
   }, [formData?.descartesConfig]);
 
-  // Función para transmitir a Descartes
+  // Función para transmitir a Descartes (soporta EDI y Cargo-XML)
   const handleTransmitToDescartes = useCallback(async () => {
-    if (!cargoImpFwb?.fullMessage || !formData?.descartesConfig) return;
+    if (!formData?.descartesConfig) return;
+
+    // Validar según formato
+    if (messageFormat === 'cargoxml' && !cargoXmlBundle?.xfwb?.xmlContent) return;
+    if (messageFormat === 'edi' && !cargoImpFwb?.fullMessage) return;
 
     setIsTransmitting(true);
     setTransmitSuccess(false);
@@ -950,33 +957,57 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
         password: formData.descartesConfig.password
       });
 
-      // Preparar mensajes
-      const fwbMessage = cargoImpFwb.fullMessage;
       const awbNumber = formData.awbNumber;
-      
-      // Preparar FHLs si es consolidado y se quieren todos
-      let fhlMessages: string[] = [];
-      let hawbNumbers: string[] = [];
-      
-      if (formData.hasHouses && sendMode === 'masterAndHouses' && cargoImpFhl) {
-        fhlMessages = cargoImpFhl.map(f => f.fullMessage);
-        hawbNumbers = formData.houseBills.map(h => h.hawbNumber);
-      }
+      let transmissionResult;
+      let masterMessage: string;
+      let houseMessages: string[] = [];
 
-      // Transmitir bundle (FWB + FHLs)
-      const transmissionResult = await service.sendBundle(
-        fwbMessage,
-        awbNumber,
-        fhlMessages,
-        hawbNumbers
-      );
+      if (messageFormat === 'cargoxml') {
+        // === CARGO-XML ===
+        masterMessage = cargoXmlBundle!.xfwb.xmlContent;
+        
+        // Preparar XFZBs si es consolidado y se quieren todos
+        let hawbNumbers: string[] = [];
+        
+        if (formData.hasHouses && sendMode === 'masterAndHouses' && cargoXmlBundle!.xfzbs.length > 0) {
+          houseMessages = cargoXmlBundle!.xfzbs.map(x => x.xmlContent);
+          hawbNumbers = cargoXmlBundle!.xfzbs.map(x => x.hawbNumber || '');
+        }
+
+        // Transmitir bundle XML (XFWB + XFZBs)
+        transmissionResult = await service.sendBundle(
+          masterMessage,
+          awbNumber,
+          houseMessages,
+          hawbNumbers
+        );
+      } else {
+        // === EDI (CARGO-IMP) ===
+        masterMessage = cargoImpFwb!.fullMessage;
+        
+        // Preparar FHLs si es consolidado y se quieren todos
+        let hawbNumbers: string[] = [];
+        
+        if (formData.hasHouses && sendMode === 'masterAndHouses' && cargoImpFhl) {
+          houseMessages = cargoImpFhl.map(f => f.fullMessage);
+          hawbNumbers = formData.houseBills.map(h => h.hawbNumber);
+        }
+
+        // Transmitir bundle EDI (FWB + FHLs)
+        transmissionResult = await service.sendBundle(
+          masterMessage,
+          awbNumber,
+          houseMessages,
+          hawbNumbers
+        );
+      }
 
       // Crear resultado
       const result: CargoImpResult = {
         allSuccess: transmissionResult.allSuccess,
         summary: transmissionResult.summary,
-        fwbMessage: fwbMessage,
-        fhlMessages: fhlMessages.length > 0 ? fhlMessages : undefined,
+        fwbMessage: masterMessage,
+        fhlMessages: houseMessages.length > 0 ? houseMessages : undefined,
         transmissionResult
       };
 
@@ -985,7 +1016,7 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
 
       // Notificar al componente padre si fue exitoso
       if (transmissionResult.allSuccess && onCopySuccess) {
-        onCopySuccess(formData.id, `TRANSMITTED: ${awbNumber}`);
+        onCopySuccess(formData.id, `TRANSMITTED (${messageFormat.toUpperCase()}): ${awbNumber}`);
       }
 
     } catch (error) {
@@ -993,12 +1024,12 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
       setSendResult({
         allSuccess: false,
         summary: `❌ Error de transmisión: ${errorMessage}`,
-        fwbMessage: cargoImpFwb.fullMessage
+        fwbMessage: messageFormat === 'cargoxml' ? cargoXmlBundle?.xfwb?.xmlContent : cargoImpFwb?.fullMessage
       });
     } finally {
       setIsTransmitting(false);
     }
-  }, [cargoImpFwb, cargoImpFhl, formData, sendMode, onCopySuccess]);
+  }, [cargoImpFwb, cargoImpFhl, cargoXmlBundle, formData, sendMode, messageFormat, onCopySuccess]);
 
   const copyToClipboard = useCallback((text: string) => {
     navigator.clipboard.writeText(text);
@@ -1333,9 +1364,13 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
                 <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-bold text-emerald-800">📟 Generador CARGO-IMP (EDI)</p>
+                      <p className="font-bold text-emerald-800">
+                        {messageFormat === 'cargoxml' ? '📄 Cargo-XML (XFWB/XFZB)' : '📟 CARGO-IMP (EDI)'}
+                      </p>
                       <p className="text-sm text-emerald-600">
-                        Formato: FWB/16, FWB/17, FHL/4
+                        {messageFormat === 'cargoxml' 
+                          ? 'Formato: IATA Cargo-XML 3.0' 
+                          : 'Formato: FWB/16, FWB/17, FHL/4'}
                       </p>
                       {formData.hasHouses && (
                         <p className="text-xs text-purple-500 mt-1">Consolidado: Master + {formData.houseBills.length} House(s)</p>
@@ -1345,7 +1380,25 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
                       )}
                     </div>
                     <div className="flex items-center gap-3">
-                      {/* Selector de modo de envío para consolidados */}
+                      {/* Selector de FORMATO (Cargo-XML o EDI) */}
+                      <div className="flex flex-col items-end">
+                        <label className="text-[10px] text-blue-600 uppercase font-bold mb-1">Formato</label>
+                        <select 
+                          value={messageFormat} 
+                          onChange={(e) => {
+                            const newFormat = e.target.value as 'cargoxml' | 'edi';
+                            setMessageFormat(newFormat);
+                            // Cambiar automáticamente al tab correspondiente
+                            setActiveTab(newFormat === 'cargoxml' ? 'xml' : 'json');
+                          }}
+                          className="text-sm border border-blue-300 rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none bg-white font-medium"
+                        >
+                          <option value="cargoxml">Cargo-XML</option>
+                          <option value="edi">EDI (CARGO-IMP)</option>
+                        </select>
+                      </div>
+
+                      {/* Selector de CONTENIDO para consolidados */}
                       {formData.hasHouses && (
                         <div className="flex flex-col items-end">
                           <label className="text-[10px] text-purple-600 uppercase font-bold mb-1">Contenido</label>
@@ -1354,34 +1407,25 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
                             onChange={(e) => setSendMode(e.target.value as 'masterOnly' | 'masterAndHouses')}
                             className="text-sm border border-purple-300 rounded px-3 py-2 focus:ring-2 focus:ring-purple-500 outline-none bg-white"
                           >
-                            <option value="masterAndHouses">FWB + {formData.houseBills.length} FHL</option>
-                            <option value="masterOnly">Solo FWB (Master)</option>
+                            <option value="masterAndHouses">
+                              {messageFormat === 'cargoxml' 
+                                ? `XFWB + ${formData.houseBills.length} XFZB` 
+                                : `FWB + ${formData.houseBills.length} FHL`}
+                            </option>
+                            <option value="masterOnly">
+                              {messageFormat === 'cargoxml' ? 'Solo XFWB (Master)' : 'Solo FWB (Master)'}
+                            </option>
                           </select>
                         </div>
                       )}
-                      
-                      {/* Botón para copiar EDI */}
-                      <button 
-                        onClick={handleCopyEdi}
-                        disabled={!cargoImpFwb?.fullMessage || isTransmitting}
-                        className="bg-slate-600 hover:bg-slate-700 disabled:bg-gray-400 text-white px-4 py-3 rounded-lg flex items-center gap-2 font-medium transition-all shadow-md hover:shadow-lg"
-                      >
-                        {copied ? (
-                          <>
-                            <Check size={18} /> ¡Copiado!
-                          </>
-                        ) : (
-                          <>
-                            <Copy size={18} /> Copiar EDI
-                          </>
-                        )}
-                      </button>
 
                       {/* Botón para transmitir a Descartes (solo si hay configuración) */}
                       {hasDescartesConfig && (
                         <button 
                           onClick={handleTransmitToDescartes}
-                          disabled={!cargoImpFwb?.fullMessage || isTransmitting}
+                          disabled={messageFormat === 'cargoxml' 
+                            ? !cargoXmlBundle?.xfwb?.xmlContent 
+                            : !cargoImpFwb?.fullMessage || isTransmitting}
                           className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white px-6 py-3 rounded-lg flex items-center gap-2 font-bold transition-all shadow-lg hover:shadow-xl"
                         >
                           {isTransmitting ? (
