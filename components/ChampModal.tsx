@@ -31,6 +31,8 @@ import {
 } from 'lucide-preact';
 import { ConfigPanel, resetSessionConfig } from './ConfigPanel';
 import { CargoImpSegmentViewer } from './CargoImpSegmentViewer';
+import { CargoXmlViewer } from './CargoXmlViewer';
+import { generateCargoXmlBundle, CargoXmlBundle } from '../services/cargoXmlService';
 
 // ============================================================
 // COMPONENTE OPTIMIZADO: House Row Colapsable (Memoizado)
@@ -360,8 +362,9 @@ interface ChampModalProps {
   onSaveConfig?: (config: ConnectorConfig) => void;
 }
 
-type Tab = 'summary' | 'parties' | 'cargo' | 'financials' | 'security' | 'houses' | 'json';
+type Tab = 'summary' | 'parties' | 'cargo' | 'financials' | 'security' | 'houses' | 'json' | 'xml';
 type JsonSubTab = 'fwb' | 'fhl';
+type XmlSubTab = 'xfwb' | 'xfzb';
 
 const deepClone = <T,>(value: T): T => {
   // structuredClone es significativamente más rápido que JSON.parse(JSON.stringify(...))
@@ -683,6 +686,7 @@ const ExpandableJsonSection: FunctionComponent<ExpandableJsonSectionProps> = ({
 export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose, shipment, onSave, onCopySuccess, onSaveConfig }) => {
   const [activeTab, setActiveTab] = useState<Tab>('parties');
   const [activeJsonTab, setActiveJsonTab] = useState<JsonSubTab>('fwb');
+  const [activeXmlTab, setActiveXmlTab] = useState<XmlSubTab>('xfwb');
   const [formData, setFormData] = useState<InternalShipment | null>(null);
   const [copied, setCopied] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
@@ -817,6 +821,23 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
   }, [formData, selectedProvider, configVersion]);
 
   const { fwbMessage: cargoImpFwb, fhlMessages: cargoImpFhl, concatenatedFhl: cargoImpConcatFhl, policyInfo: cargoImpPolicyInfo, error: cargoImpGenError } = cargoImpGenerationResult;
+
+  // ============================================================
+  // MEMO: Generación XML para Cargo-XML (XFWB/XFZB)
+  // ============================================================
+  const cargoXmlBundle = useMemo<CargoXmlBundle | null>(() => {
+    if (!formData) return null;
+    
+    try {
+      console.log('[CARGO-XML] Generando bundle XFWB/XFZB...');
+      const bundle = generateCargoXmlBundle(formData);
+      console.log(`[CARGO-XML] Bundle generado: XFWB válido=${bundle.xfwb.isValid}, XFZBs=${bundle.xfzbs.length}`);
+      return bundle;
+    } catch (e: any) {
+      console.error('[CARGO-XML Generation Error]', e);
+      return null;
+    }
+  }, [formData, configVersion]);
 
   // Handler para toggle de segmentos desde el visor EDI
   // Usa el RuntimeConfigStore (en memoria, sin localStorage)
@@ -1019,6 +1040,7 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
     { id: 'houses', icon: Layers, label: formData.hasHouses ? `Houses (${formData.houseBills.length})` : 'Houses' },
     { id: 'summary', icon: Eye, label: 'Resumen' },
     { id: 'json', icon: Terminal, label: 'EDI' },
+    { id: 'xml', icon: FileText, label: 'XML' },
   ];
 
   return (
@@ -2445,6 +2467,28 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
                       </div>
                     </details>
                   )}
+            </div>
+          )}
+
+          {/* ========== TAB: XML (CARGO-XML) ========== */}
+          {activeTab === 'xml' && (
+            <div className="h-full flex flex-col">
+              {cargoXmlBundle ? (
+                <CargoXmlViewer 
+                  bundle={cargoXmlBundle}
+                  onCopy={(content, type) => {
+                    console.log(`[CARGO-XML] Copiado ${type}`);
+                  }}
+                />
+              ) : (
+                <div className="flex items-center justify-center h-full text-slate-400">
+                  <div className="text-center">
+                    <FileText size={48} className="mx-auto mb-4 opacity-50" />
+                    <p>No se pudo generar el Cargo-XML</p>
+                    <p className="text-sm">Verifique los datos del envío</p>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
