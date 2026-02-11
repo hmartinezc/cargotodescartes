@@ -31,6 +31,7 @@ import {
 } from 'lucide-preact';
 import { ConfigPanel, resetSessionConfig } from './ConfigPanel';
 import { CargoImpSegmentViewer } from './CargoImpSegmentViewer';
+import { CargoImpValidationPanel } from './CargoImpValidationPanel';
 import { CargoXmlViewer } from './CargoXmlViewer';
 import { generateCargoXmlBundle, CargoXmlBundle } from '../services/cargoXmlService';
 
@@ -199,6 +200,16 @@ const HouseRow = memo<HouseRowProps>(({
                 onChange={(e) => updateField('weight', parseFloat(e.target.value) || 0)}
                 readOnly={isReadOnly}
                 className="text-sm border border-slate-200 rounded px-2 py-1 focus:ring-1 outline-none"
+              />
+            </div>
+            <div className="flex flex-col">
+              <label className="text-[10px] text-cyan-600 uppercase font-bold mb-0.5">Vol. M³ (NV)</label>
+              <input 
+                type="number" step="0.01" value={h.volumeCubicMeters || ''} 
+                onChange={(e) => updateField('volumeCubicMeters', parseFloat(e.target.value) || 0)}
+                readOnly={isReadOnly}
+                placeholder="0.00"
+                className="text-sm border border-cyan-200 rounded px-2 py-1 focus:ring-1 outline-none bg-cyan-50/30"
               />
             </div>
           </div>
@@ -693,7 +704,10 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
   const [isSending, setIsSending] = useState(false);
   const [sendResult, setSendResult] = useState<CargoImpResult | null>(null);
   const [sendMode, setSendMode] = useState<'masterOnly' | 'masterAndHouses'>('masterAndHouses');
-  const [messageFormat, setMessageFormat] = useState<'cargoxml' | 'edi'>('cargoxml');
+  // Estado para ver detalles de transmisión: null = ninguno, 'fwb' = FWB, 0/1/2... = índice de FHL
+  const [expandedTransmissionDetail, setExpandedTransmissionDetail] = useState<'fwb' | number | null>(null);
+  // NOTA: XML temporalmente desactivado - usar solo EDI
+  const [messageFormat, setMessageFormat] = useState<'cargoxml' | 'edi'>('edi');
   const [activeParty, setActiveParty] = useState<'shipper' | 'consignee'>('shipper');
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [connectorConfig, setConnectorConfig] = useState<ConnectorConfig>(() => loadConnectorConfig());
@@ -772,7 +786,7 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
       setValidationErrors([]);
       setSendResult(null);
       setSendMode('masterAndHouses');
-      setMessageFormat('cargoxml');
+      setMessageFormat('edi'); // XML temporalmente desactivado
       setActiveParty('shipper');
       // Resetear houses expandidos al cambiar de shipment
       setExpandedHouses(new Set());
@@ -930,6 +944,11 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
   const [isTransmitting, setIsTransmitting] = useState(false);
   const [transmitSuccess, setTransmitSuccess] = useState(false);
 
+  // Estado de validación CARGO-IMP (informativo, NO bloquea envío)
+  const [fwbHasValidationErrors, setFwbHasValidationErrors] = useState(false);
+  const [fwbValidationErrors, setFwbValidationErrors] = useState(0);
+  const [showValidationConfirm, setShowValidationConfirm] = useState(false);
+
   // Verificar si hay configuración de Descartes disponible
   const hasDescartesConfig = useMemo(() => {
     return !!(formData?.descartesConfig?.endpoint && 
@@ -937,24 +956,25 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
               formData?.descartesConfig?.password);
   }, [formData?.descartesConfig]);
 
-  // Función para transmitir a Descartes (soporta EDI y Cargo-XML)
-  const handleTransmitToDescartes = useCallback(async () => {
+  // Ejecutar la transmisión real
+  const executeTransmit = useCallback(async () => {
     if (!formData?.descartesConfig) return;
-
-    // Validar según formato
     if (messageFormat === 'cargoxml' && !cargoXmlBundle?.xfwb?.xmlContent) return;
     if (messageFormat === 'edi' && !cargoImpFwb?.fullMessage) return;
 
     setIsTransmitting(true);
     setTransmitSuccess(false);
     setSendResult(null);
+    setExpandedTransmissionDetail(null);
 
     try {
       // Configurar el servicio con las credenciales del shipment
+      // Si hay proxyUrl, el servicio usará el proxy del backend (evita CORS)
       const service = new DescartesTransmitService({
         endpoint: formData.descartesConfig.endpoint,
         username: formData.descartesConfig.username,
-        password: formData.descartesConfig.password
+        password: formData.descartesConfig.password,
+        proxyUrl: formData.descartesConfig.proxyUrl
       });
 
       const awbNumber = formData.awbNumber;
@@ -1031,6 +1051,15 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
     }
   }, [cargoImpFwb, cargoImpFhl, cargoXmlBundle, formData, sendMode, messageFormat, onCopySuccess]);
 
+  // Wrapper que muestra confirmación si hay errores de validación
+  const handleTransmitToDescartes = useCallback(() => {
+    if (messageFormat === 'edi' && fwbHasValidationErrors) {
+      setShowValidationConfirm(true);
+      return;
+    }
+    executeTransmit();
+  }, [messageFormat, fwbHasValidationErrors, executeTransmit]);
+
   const copyToClipboard = useCallback((text: string) => {
     navigator.clipboard.writeText(text);
     setCopied(true);
@@ -1071,7 +1100,7 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
     { id: 'houses', icon: Layers, label: formData.hasHouses ? `Houses (${formData.houseBills.length})` : 'Houses' },
     { id: 'summary', icon: Eye, label: 'Resumen' },
     { id: 'json', icon: Terminal, label: 'EDI' },
-    { id: 'xml', icon: FileText, label: 'XML' },
+    // { id: 'xml', icon: FileText, label: 'XML' }, // TEMPORALMENTE DESACTIVADO
   ];
 
   return (
@@ -1380,15 +1409,18 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
                       )}
                     </div>
                     <div className="flex items-center gap-3">
-                      {/* Selector de FORMATO (Cargo-XML o EDI) */}
+                      {/* Selector de FORMATO - TEMPORALMENTE SOLO EDI */}
                       <div className="flex flex-col items-end">
                         <label className="text-[10px] text-blue-600 uppercase font-bold mb-1">Formato</label>
+                        <div className="text-sm border border-blue-300 rounded px-3 py-2 bg-blue-50 font-medium text-blue-700">
+                          EDI (CARGO-IMP)
+                        </div>
+                        {/* SELECTOR XML TEMPORALMENTE DESACTIVADO
                         <select 
                           value={messageFormat} 
                           onChange={(e) => {
                             const newFormat = e.target.value as 'cargoxml' | 'edi';
                             setMessageFormat(newFormat);
-                            // Cambiar automáticamente al tab correspondiente
                             setActiveTab(newFormat === 'cargoxml' ? 'xml' : 'json');
                           }}
                           className="text-sm border border-blue-300 rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none bg-white font-medium"
@@ -1396,6 +1428,7 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
                           <option value="cargoxml">Cargo-XML</option>
                           <option value="edi">EDI (CARGO-IMP)</option>
                         </select>
+                        */}
                       </div>
 
                       {/* Selector de CONTENIDO para consolidados */}
@@ -1421,13 +1454,24 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
 
                       {/* Botón para transmitir a Descartes (solo si hay configuración) */}
                       {hasDescartesConfig && (
-                        <button 
-                          onClick={handleTransmitToDescartes}
-                          disabled={messageFormat === 'cargoxml' 
-                            ? !cargoXmlBundle?.xfwb?.xmlContent 
-                            : !cargoImpFwb?.fullMessage || isTransmitting}
-                          className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white px-6 py-3 rounded-lg flex items-center gap-2 font-bold transition-all shadow-lg hover:shadow-xl"
-                        >
+                        <div className="flex flex-col items-end gap-1">
+                          {/* Alerta informativa de validación (NO bloquea) */}
+                          {messageFormat === 'edi' && fwbHasValidationErrors && (
+                            <span className="text-xs text-amber-600 font-semibold flex items-center gap-1">
+                              <AlertTriangle size={12} /> {fwbValidationErrors} error(es) detectado(s) — revise antes de enviar
+                            </span>
+                          )}
+                          <button 
+                            onClick={handleTransmitToDescartes}
+                            disabled={messageFormat === 'cargoxml' 
+                              ? !cargoXmlBundle?.xfwb?.xmlContent 
+                              : !cargoImpFwb?.fullMessage || isTransmitting}
+                            className={`${
+                              messageFormat === 'edi' && fwbHasValidationErrors
+                                ? 'bg-amber-500 hover:bg-amber-600'
+                                : 'bg-emerald-600 hover:bg-emerald-700'
+                            } disabled:bg-slate-400 text-white px-6 py-3 rounded-lg flex items-center gap-2 font-bold transition-all shadow-lg hover:shadow-xl`}
+                          >
                           {isTransmitting ? (
                             <>
                               <Loader2 size={18} className="animate-spin" /> Transmitiendo...
@@ -1438,10 +1482,11 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
                             </>
                           ) : (
                             <>
-                              <Upload size={18} /> Transmitir a Descartes
+                              <Upload size={18} /> {messageFormat === 'edi' && fwbHasValidationErrors ? 'Transmitir (con errores)' : 'Transmitir a Descartes'}
                             </>
                           )}
-                        </button>
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -1480,65 +1525,221 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
                       {/* Detalles de transmisión a Descartes */}
                       {sendResult.transmissionResult && (
                         <div className="mt-2 text-xs bg-white/70 p-3 rounded border border-slate-200 space-y-2">
-                          {/* FWB Result */}
-                          <div className="p-2 rounded bg-slate-50 border border-slate-200">
-                            <div className="flex items-center gap-2 mb-1">
+                          <div className="text-[10px] text-slate-400 mb-2 flex items-center gap-1">
+                            <Info size={12} />
+                            <span>Clic en cada mensaje para ver payload enviado y respuesta completa</span>
+                          </div>
+                          
+                          {/* FWB Result - Clickeable */}
+                          <div 
+                            className={`p-2 rounded border cursor-pointer transition-all hover:shadow-md ${
+                              sendResult.transmissionResult.fwbResult.success 
+                                ? 'bg-green-50 border-green-200 hover:bg-green-100' 
+                                : 'bg-red-50 border-red-200 hover:bg-red-100'
+                            }`}
+                            onClick={() => setExpandedTransmissionDetail(
+                              expandedTransmissionDetail === 'fwb' ? null : 'fwb'
+                            )}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-slate-400">
+                                {expandedTransmissionDetail === 'fwb' ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                              </span>
                               <span className={`text-lg ${sendResult.transmissionResult.fwbResult.success ? 'text-green-600' : 'text-red-600'}`}>
                                 {sendResult.transmissionResult.fwbResult.success ? '✓' : '✗'}
                               </span>
                               <strong className="text-sm">FWB ({sendResult.transmissionResult.fwbResult.reference})</strong>
+                              <span className="ml-auto text-[10px] text-slate-400">
+                                {sendResult.transmissionResult.fwbResult.timestamp ? new Date(sendResult.transmissionResult.fwbResult.timestamp).toLocaleTimeString() : ''}
+                              </span>
                             </div>
+                            {/* Info básica siempre visible */}
                             {sendResult.transmissionResult.fwbResult.descartesResponse && (
-                              <div className="ml-6 text-xs space-y-0.5">
+                              <div className="ml-8 text-xs flex flex-wrap gap-3 mt-1">
                                 {sendResult.transmissionResult.fwbResult.descartesResponse.tid && (
-                                  <p><span className="text-slate-500">TID:</span> <span className="font-mono text-blue-700">{sendResult.transmissionResult.fwbResult.descartesResponse.tid}</span></p>
+                                  <span><span className="text-slate-500">TID:</span> <span className="font-mono text-blue-700">{sendResult.transmissionResult.fwbResult.descartesResponse.tid}</span></span>
                                 )}
                                 {sendResult.transmissionResult.fwbResult.descartesResponse.status && (
-                                  <p><span className="text-slate-500">Status:</span> <span className="text-green-700 font-medium">{sendResult.transmissionResult.fwbResult.descartesResponse.status}</span></p>
-                                )}
-                                {sendResult.transmissionResult.fwbResult.descartesResponse.bytesReceived && (
-                                  <p><span className="text-slate-500">Bytes:</span> {sendResult.transmissionResult.fwbResult.descartesResponse.bytesReceived}</p>
+                                  <span><span className="text-slate-500">Status:</span> <span className="text-green-700 font-medium">{sendResult.transmissionResult.fwbResult.descartesResponse.status}</span></span>
                                 )}
                                 {sendResult.transmissionResult.fwbResult.descartesResponse.error && (
-                                  <p className="text-red-600"><span className="text-slate-500">Error:</span> {sendResult.transmissionResult.fwbResult.descartesResponse.error}</p>
-                                )}
-                                {sendResult.transmissionResult.fwbResult.descartesResponse.errorDetail && (
-                                  <p className="text-red-600"><span className="text-slate-500">Detalle:</span> {sendResult.transmissionResult.fwbResult.descartesResponse.errorDetail}</p>
+                                  <span className="text-red-600">{sendResult.transmissionResult.fwbResult.descartesResponse.error}</span>
                                 )}
                               </div>
                             )}
                             {sendResult.transmissionResult.fwbResult.error && !sendResult.transmissionResult.fwbResult.descartesResponse && (
-                              <p className="ml-6 text-red-600">{sendResult.transmissionResult.fwbResult.error}</p>
+                              <p className="ml-8 text-red-600">{sendResult.transmissionResult.fwbResult.error}</p>
                             )}
                           </div>
                           
-                          {/* FHL Results */}
-                          {sendResult.transmissionResult.fhlResults.map((fhl, idx) => (
-                            <div key={idx} className="p-2 rounded bg-slate-50 border border-slate-200">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className={`text-lg ${fhl.success ? 'text-green-600' : 'text-red-600'}`}>
-                                  {fhl.success ? '✓' : '✗'}
-                                </span>
-                                <strong className="text-sm">FHL ({fhl.reference})</strong>
-                              </div>
-                              {fhl.descartesResponse && (
-                                <div className="ml-6 text-xs space-y-0.5">
-                                  {fhl.descartesResponse.tid && (
-                                    <p><span className="text-slate-500">TID:</span> <span className="font-mono text-blue-700">{fhl.descartesResponse.tid}</span></p>
-                                  )}
-                                  {fhl.descartesResponse.status && (
-                                    <p><span className="text-slate-500">Status:</span> <span className="text-green-700 font-medium">{fhl.descartesResponse.status}</span></p>
-                                  )}
-                                  {fhl.descartesResponse.error && (
-                                    <p className="text-red-600"><span className="text-slate-500">Error:</span> {fhl.descartesResponse.error}</p>
-                                  )}
-                                  {fhl.descartesResponse.errorDetail && (
-                                    <p className="text-red-600"><span className="text-slate-500">Detalle:</span> {fhl.descartesResponse.errorDetail}</p>
+                          {/* Panel expandido FWB */}
+                          {expandedTransmissionDetail === 'fwb' && (
+                            <div className="ml-4 p-3 bg-slate-100 rounded border border-slate-300 space-y-3 animate-fadeIn">
+                              {/* Payload enviado */}
+                              <div>
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="font-semibold text-slate-700 flex items-center gap-1">
+                                    <Upload size={12} /> Mensaje Enviado (Request)
+                                  </span>
+                                  {sendResult.transmissionResult.fwbResult.requestBody && (
+                                    <button
+                                      className="text-[10px] px-2 py-0.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 flex items-center gap-1"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        navigator.clipboard.writeText(sendResult.transmissionResult!.fwbResult.requestBody || '');
+                                      }}
+                                    >
+                                      <Copy size={10} /> Copiar
+                                    </button>
                                   )}
                                 </div>
+                                <pre className="text-[10px] bg-white p-2 rounded border border-slate-200 overflow-x-auto max-h-40 whitespace-pre-wrap font-mono">
+                                  {sendResult.transmissionResult.fwbResult.requestBody || '(No disponible)'}
+                                </pre>
+                              </div>
+                              
+                              {/* Respuesta completa */}
+                              <div>
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="font-semibold text-slate-700 flex items-center gap-1">
+                                    <FileText size={12} /> Respuesta API (Response)
+                                  </span>
+                                  {sendResult.transmissionResult.fwbResult.responseRaw && (
+                                    <button
+                                      className="text-[10px] px-2 py-0.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 flex items-center gap-1"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        navigator.clipboard.writeText(sendResult.transmissionResult!.fwbResult.responseRaw || '');
+                                      }}
+                                    >
+                                      <Copy size={10} /> Copiar
+                                    </button>
+                                  )}
+                                </div>
+                                <pre className="text-[10px] bg-white p-2 rounded border border-slate-200 overflow-x-auto max-h-40 whitespace-pre-wrap font-mono">
+                                  {sendResult.transmissionResult.fwbResult.responseRaw || sendResult.transmissionResult.fwbResult.responseMessage || '(No disponible)'}
+                                </pre>
+                              </div>
+                              
+                              {/* Detalles parseados */}
+                              {sendResult.transmissionResult.fwbResult.descartesResponse && (
+                                <div>
+                                  <span className="font-semibold text-slate-700 flex items-center gap-1 mb-1">
+                                    <Code size={12} /> Respuesta Parseada
+                                  </span>
+                                  <pre className="text-[10px] bg-white p-2 rounded border border-slate-200 overflow-x-auto max-h-32 font-mono">
+                                    {JSON.stringify(sendResult.transmissionResult.fwbResult.descartesResponse, null, 2)}
+                                  </pre>
+                                </div>
                               )}
-                              {fhl.error && !fhl.descartesResponse && (
-                                <p className="ml-6 text-red-600">{fhl.error}</p>
+                            </div>
+                          )}
+                          
+                          {/* FHL Results - Clickeables */}
+                          {sendResult.transmissionResult.fhlResults.map((fhl, idx) => (
+                            <div key={idx}>
+                              <div 
+                                className={`p-2 rounded border cursor-pointer transition-all hover:shadow-md ${
+                                  fhl.success 
+                                    ? 'bg-green-50 border-green-200 hover:bg-green-100' 
+                                    : 'bg-red-50 border-red-200 hover:bg-red-100'
+                                }`}
+                                onClick={() => setExpandedTransmissionDetail(
+                                  expandedTransmissionDetail === idx ? null : idx
+                                )}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span className="text-slate-400">
+                                    {expandedTransmissionDetail === idx ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                                  </span>
+                                  <span className={`text-lg ${fhl.success ? 'text-green-600' : 'text-red-600'}`}>
+                                    {fhl.success ? '✓' : '✗'}
+                                  </span>
+                                  <strong className="text-sm">FHL ({fhl.reference})</strong>
+                                  <span className="ml-auto text-[10px] text-slate-400">
+                                    {fhl.timestamp ? new Date(fhl.timestamp).toLocaleTimeString() : ''}
+                                  </span>
+                                </div>
+                                {/* Info básica siempre visible */}
+                                {fhl.descartesResponse && (
+                                  <div className="ml-8 text-xs flex flex-wrap gap-3 mt-1">
+                                    {fhl.descartesResponse.tid && (
+                                      <span><span className="text-slate-500">TID:</span> <span className="font-mono text-blue-700">{fhl.descartesResponse.tid}</span></span>
+                                    )}
+                                    {fhl.descartesResponse.status && (
+                                      <span><span className="text-slate-500">Status:</span> <span className="text-green-700 font-medium">{fhl.descartesResponse.status}</span></span>
+                                    )}
+                                    {fhl.descartesResponse.error && (
+                                      <span className="text-red-600">{fhl.descartesResponse.error}</span>
+                                    )}
+                                  </div>
+                                )}
+                                {fhl.error && !fhl.descartesResponse && (
+                                  <p className="ml-8 text-red-600">{fhl.error}</p>
+                                )}
+                              </div>
+                              
+                              {/* Panel expandido FHL */}
+                              {expandedTransmissionDetail === idx && (
+                                <div className="ml-4 mt-2 p-3 bg-slate-100 rounded border border-slate-300 space-y-3 animate-fadeIn">
+                                  {/* Payload enviado */}
+                                  <div>
+                                    <div className="flex items-center justify-between mb-1">
+                                      <span className="font-semibold text-slate-700 flex items-center gap-1">
+                                        <Upload size={12} /> Mensaje Enviado (Request)
+                                      </span>
+                                      {fhl.requestBody && (
+                                        <button
+                                          className="text-[10px] px-2 py-0.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 flex items-center gap-1"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            navigator.clipboard.writeText(fhl.requestBody || '');
+                                          }}
+                                        >
+                                          <Copy size={10} /> Copiar
+                                        </button>
+                                      )}
+                                    </div>
+                                    <pre className="text-[10px] bg-white p-2 rounded border border-slate-200 overflow-x-auto max-h-40 whitespace-pre-wrap font-mono">
+                                      {fhl.requestBody || '(No disponible)'}
+                                    </pre>
+                                  </div>
+                                  
+                                  {/* Respuesta completa */}
+                                  <div>
+                                    <div className="flex items-center justify-between mb-1">
+                                      <span className="font-semibold text-slate-700 flex items-center gap-1">
+                                        <FileText size={12} /> Respuesta API (Response)
+                                      </span>
+                                      {fhl.responseRaw && (
+                                        <button
+                                          className="text-[10px] px-2 py-0.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 flex items-center gap-1"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            navigator.clipboard.writeText(fhl.responseRaw || '');
+                                          }}
+                                        >
+                                          <Copy size={10} /> Copiar
+                                        </button>
+                                      )}
+                                    </div>
+                                    <pre className="text-[10px] bg-white p-2 rounded border border-slate-200 overflow-x-auto max-h-40 whitespace-pre-wrap font-mono">
+                                      {fhl.responseRaw || fhl.responseMessage || '(No disponible)'}
+                                    </pre>
+                                  </div>
+                                  
+                                  {/* Detalles parseados */}
+                                  {fhl.descartesResponse && (
+                                    <div>
+                                      <span className="font-semibold text-slate-700 flex items-center gap-1 mb-1">
+                                        <Code size={12} /> Respuesta Parseada
+                                      </span>
+                                      <pre className="text-[10px] bg-white p-2 rounded border border-slate-200 overflow-x-auto max-h-32 font-mono">
+                                        {JSON.stringify(fhl.descartesResponse, null, 2)}
+                                      </pre>
+                                    </div>
+                                  )}
+                                </div>
                               )}
                             </div>
                           ))}
@@ -2457,14 +2658,25 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
                   {/* Visor de segmentos CARGO-IMP */}
                   <div className="flex-1 overflow-y-auto">
                     {activeJsonTab === 'fwb' && cargoImpFwb && (
-                      <CargoImpSegmentViewer 
-                        message={cargoImpFwb}
-                        onSegmentChange={(segmentCode, newValue) => {
-                          // Por ahora solo log, en futuro permitir edición
-                          console.log(`[CARGO-IMP] Editando segmento ${segmentCode}:`, newValue);
-                        }}
-                        onToggleSegment={handleCargoImpToggleSegment}
-                      />
+                      <>
+                        {/* Panel de Validación IATA - FWB */}
+                        <CargoImpValidationPanel
+                          message={cargoImpFwb}
+                          policy={cargoImpPolicyInfo?.policy}
+                          onValidationChange={({ canSend, errorCount }) => {
+                            setFwbHasValidationErrors(errorCount > 0);
+                            setFwbValidationErrors(errorCount);
+                          }}
+                        />
+                        <CargoImpSegmentViewer 
+                          message={cargoImpFwb}
+                          onSegmentChange={(segmentCode, newValue) => {
+                            // Por ahora solo log, en futuro permitir edición
+                            console.log(`[CARGO-IMP] Editando segmento ${segmentCode}:`, newValue);
+                          }}
+                          onToggleSegment={handleCargoImpToggleSegment}
+                        />
+                      </>
                     )}
                     {activeJsonTab === 'fhl' && (
                       <>
@@ -2481,6 +2693,13 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
                                   <Layers size={14}/>
                                   FHL #{idx + 1}
                                 </div>
+                                {/* Panel de Validación IATA - FHL */}
+                                <CargoImpValidationPanel
+                                  message={fhlMsg}
+                                  policy={cargoImpPolicyInfo?.policy}
+                                  defaultCollapsed={true}
+                                  compact={true}
+                                />
                                 <CargoImpSegmentViewer 
                                   message={fhlMsg}
                                   onSegmentChange={(segmentCode, newValue) => {
@@ -2563,6 +2782,49 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
           </div>
         </div>
       </div>
+      
+      {/* Dialog de Confirmación — Enviar con errores de validación */}
+      {showValidationConfirm && (
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl border-2 border-amber-300 max-w-md mx-4 overflow-hidden animate-bounce-in">
+            <div className="bg-gradient-to-r from-amber-400 to-orange-400 px-6 py-4 flex items-center gap-3">
+              <AlertTriangle size={28} className="text-white" />
+              <div>
+                <h3 className="text-white font-bold text-lg">⚠️ Mensaje con Errores</h3>
+                <p className="text-amber-100 text-xs">Validación IATA CARGO-IMP</p>
+              </div>
+            </div>
+            <div className="px-6 py-5">
+              <p className="text-slate-700 mb-3">
+                El mensaje EDI tiene <span className="font-bold text-red-600">{fwbValidationErrors} error(es)</span> de validación según las especificaciones IATA.
+              </p>
+              <p className="text-slate-600 text-sm mb-4">
+                La aerolínea podría <strong>rechazar</strong> el mensaje o generar un <strong>HOLD</strong> en el sistema de Risk Assessment (ACAS/PLACI).
+              </p>
+              <p className="text-slate-800 font-semibold text-center text-base mb-2">
+                ¿Está seguro que desea transmitir?
+              </p>
+            </div>
+            <div className="px-6 py-4 bg-slate-50 flex justify-end gap-3 border-t border-slate-200">
+              <button
+                onClick={() => setShowValidationConfirm(false)}
+                className="px-5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg font-semibold transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  setShowValidationConfirm(false);
+                  executeTransmit();
+                }}
+                className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-bold transition-colors flex items-center gap-2 shadow-lg"
+              >
+                <Upload size={16} /> Sí, Enviar de Todas Formas
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* Panel de Configuración */}
       <ConfigPanel 

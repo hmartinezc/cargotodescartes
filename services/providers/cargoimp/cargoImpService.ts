@@ -68,6 +68,7 @@ export function normalize(str: string, length: number = 0, withSpaces: boolean =
   str = str.replace(/`/g, ' ').replace(/´/g, ' ');  // Acentos
   str = str.replace(/_/g, space);  // Underscore (guión bajo)
   str = str.replace(/@/g, space);  // Arroba
+  str = str.replace(/\(/g, '').replace(/\)/g, '');  // Paréntesis → eliminar
   
   // Punto condicional
   if (evalpoint) {
@@ -665,7 +666,7 @@ export class CargoImpService {
     const segments: GeneratedSegment[] = [];
     const allSegmentTypes: FwbSegmentType[] = [
       'FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 
-      'CVD', 'RTD', 'NG', 'NH', 'OTH', 'PPD', 'COL', 'CER', 'ISU', 
+      'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'OTH', 'PPD', 'COL', 'CER', 'ISU', 
       'REF', 'SPH', 'OCI', 'NFY', 'FTR'
     ];
 
@@ -814,6 +815,14 @@ export class CargoImpService {
 
       case 'NH':
         content = this.buildNhSegment(shipment);
+        break;
+
+      case 'NV':
+        content = this.buildNvSegment(shipment);
+        break;
+
+      case 'NS':
+        content = this.buildNsSegment(shipment);
         break;
 
       case 'OTH':
@@ -1271,8 +1280,17 @@ export class CargoImpService {
     return 'FRESHPERISH';
   }
 
+  /**
+   * Construye el segmento NH (Harmonized System Codes)
+   * 
+   * Formato:
+   *   /2/NH/060311
+   *   /3/NH/060312
+   */
   private buildNhSegment(shipment: InternalShipment): string {
     const htsCodes: string[] = [];
+    const lines: string[] = [];
+    let nextLineNumber = 2; // Comienza en 2 (después de RTD que es línea 1)
     
     // 1. Primero buscar en rates del master
     shipment.rates.forEach(rate => {
@@ -1294,10 +1312,121 @@ export class CargoImpService {
     
     if (htsCodes.length === 0) return '';
     
-    // Eliminar duplicados
+    // Generar líneas NH (eliminar duplicados)
     const uniqueCodes = [...new Set(htsCodes)];
+    uniqueCodes.forEach((code) => {
+      lines.push(`/${nextLineNumber}/NH/${code}`);
+      nextLineNumber++;
+    });
     
-    return uniqueCodes.map((code, idx) => `/${idx + 2}/NH/${code}`).join('\n');
+    return lines.join('\n');
+  }
+
+  /**
+   * Obtiene el siguiente número de línea después de NH (para NV y NS)
+   */
+  private getNextLineNumberAfterNh(shipment: InternalShipment): number {
+    const htsCodes: string[] = [];
+    
+    shipment.rates.forEach(rate => {
+      if (rate.hsCodes) {
+        htsCodes.push(...rate.hsCodes);
+      } else if (rate.hsCode) {
+        htsCodes.push(rate.hsCode);
+      }
+    });
+    
+    if (shipment.hasHouses && shipment.houseBills && shipment.houseBills.length > 0) {
+      shipment.houseBills.forEach(house => {
+        if (house.htsCodes && house.htsCodes.length > 0) {
+          htsCodes.push(...house.htsCodes);
+        }
+      });
+    }
+    
+    const uniqueCodes = [...new Set(htsCodes)];
+    return 2 + uniqueCodes.length; // 2 es el inicio, + cantidad de NH
+  }
+
+  /**
+   * Construye el segmento NV (Volume en metros cúbicos)
+   * Para consolidados: suma volumeCubicMeters de houses, o usa volume del master
+   * Para directos: usa el volume del shipment
+   * 
+   * Formato: /X/NV/MC0.0018 (hasta 4 decimales para valores pequeños)
+   */
+  private buildNvSegment(shipment: InternalShipment): string {
+    let totalVolume = 0;
+    
+    if (shipment.hasHouses && shipment.houseBills && shipment.houseBills.length > 0) {
+      // CONSOLIDADO: Sumar volumen de cada house
+      shipment.houseBills.forEach((house, idx) => {
+        // Usar volumeCubicMeters o volume (fallback para datos del backend)
+        const vol = house.volumeCubicMeters ?? house.volume ?? 0;
+        console.log(`[NV Debug] House ${idx}: volumeCubicMeters=${house.volumeCubicMeters}, volume=${house.volume}, using=${vol}`);
+        if (vol > 0) {
+          totalVolume += vol;
+        }
+      });
+      
+      // Si ningún house tiene volumen, usar el volumen del master
+      if (totalVolume <= 0 && shipment.volume && shipment.volume > 0) {
+        totalVolume = shipment.volume;
+        console.log(`[NV Debug] No volume in houses, using master volume: ${totalVolume}`);
+      }
+    } else {
+      // DIRECTO: Usar volume del shipment
+      totalVolume = shipment.volume ?? 0;
+      console.log(`[NV Debug] Direct shipment, using master volume: ${totalVolume}`);
+    }
+    
+    console.log(`[NV Debug] Total volume: ${totalVolume}`);
+    
+    // Solo agregar NV si hay volumen > 0
+    if (totalVolume <= 0) return '';
+    
+    const lineNumber = this.getNextLineNumberAfterNh(shipment);
+    
+    // Siempre 2 decimales, mínimo 0.01
+    const volume2d = Math.max(totalVolume, 0.01);
+    return `/${lineNumber}/NV/MC${formatNumber(volume2d, 2)}`;
+  }
+
+  /**
+   * Construye el segmento NS (SLAC - Shipper Load and Count)
+   * Solo para consolidados - muestra las piezas del master
+   * 
+   * Formato: /X/NS/148
+   */
+  private buildNsSegment(shipment: InternalShipment): string {
+    // Solo para consolidados
+    if (!shipment.hasHouses || !shipment.pieces || shipment.pieces <= 0) {
+      return '';
+    }
+    
+    // Calcular posición después de NV (si existe)
+    let lineNumber = this.getNextLineNumberAfterNh(shipment);
+    
+    // Si hay volumen (de houses o del master), NV ocupa una línea antes de NS
+    let totalVolume = 0;
+    if (shipment.houseBills && shipment.houseBills.length > 0) {
+      shipment.houseBills.forEach(house => {
+        const vol = house.volumeCubicMeters ?? house.volume ?? 0;
+        if (vol > 0) {
+          totalVolume += vol;
+        }
+      });
+    }
+    // Fallback al volumen del master
+    if (totalVolume <= 0 && shipment.volume && shipment.volume > 0) {
+      totalVolume = shipment.volume;
+    }
+    
+    if (totalVolume > 0) {
+      lineNumber++;
+    }
+    
+    return `/${lineNumber}/NS/${shipment.pieces}`;
   }
 
   private buildOthSegment(shipment: InternalShipment): string {
@@ -1620,41 +1749,49 @@ export class CargoImpService {
       { name: 'weight', value: formatNumber(house.weight), originalValue: formatNumber(house.weight), maxLength: 10, required: true, modified: false }
     ]));
     
+    // TXT - Free Text (Nature of Goods completa, sin códigos HS que van en HTS)
+    const isTxtEnabled = this.isFhlSegmentEnabled('TXT', policy);
+    const rawNature = normalize(house.natureOfGoods, 70, true, false) || '';
+    // Limpiar: quitar todo desde "HS" en adelante (ej: "FRESH CUT FLOWERS PERISHABLE HS 060311" → "FRESH CUT FLOWERS PERISHABLE")
+    const fullNatureOfGoods = rawNature.replace(/\s*HS\s*.*/i, '').trim();
+    const txtContent = fullNatureOfGoods ? `TXT/${fullNatureOfGoods}` : '';
+    segments.push(this.createFhlSegment('TXT', txtContent, 4, isTxtEnabled && !!txtContent, []));
+    
     // HTS - Harmonized codes (si existen y está habilitado)
     const isHtsEnabled = this.isFhlSegmentEnabled('HTS', policy);
     if (house.htsCodes && house.htsCodes.length > 0) {
       const htsContent = `HTS/${house.htsCodes[0]}`;
-      segments.push(this.createFhlSegment('HTS', htsContent, 4, isHtsEnabled, []));
+      segments.push(this.createFhlSegment('HTS', htsContent, 5, isHtsEnabled, []));
     } else {
-      segments.push(this.createFhlSegment('HTS', '', 4, false, []));
+      segments.push(this.createFhlSegment('HTS', '', 5, false, []));
     }
     
     // OCI
     const ociContent = this.buildFhlOciSegment(house, shipment, policy);
     const isOciEnabled = this.isFhlSegmentEnabled('OCI', policy) && !!ociContent;
-    segments.push(this.createFhlSegment('OCI', ociContent, 5, isOciEnabled, []));
+    segments.push(this.createFhlSegment('OCI', ociContent, 6, isOciEnabled, []));
     
     // SHP - Shipper de la house
     const shpContent = this.buildFhlShpSegment(house, shipment, policy);
     const isShpEnabled = this.isFhlSegmentEnabled('SHP', policy);
-    segments.push(this.createFhlSegment('SHP', shpContent, 6, isShpEnabled, []));
+    segments.push(this.createFhlSegment('SHP', shpContent, 7, isShpEnabled, []));
     
     // CNE - Consignee de la house
     const cneContent = this.buildFhlCneSegment(house, shipment, policy);
     const isCneEnabled = this.isFhlSegmentEnabled('CNE', policy);
-    segments.push(this.createFhlSegment('CNE', cneContent, 7, isCneEnabled, []));
+    segments.push(this.createFhlSegment('CNE', cneContent, 8, isCneEnabled, []));
     
     // CVD
     const cvdContent = `CVD/${shipment.currency}/PP/NVD/NCV/XXX`;
     const isCvdEnabled = this.isFhlSegmentEnabled('CVD', policy);
-    segments.push(this.createFhlSegment('CVD', cvdContent, 8, isCvdEnabled, []));
+    segments.push(this.createFhlSegment('CVD', cvdContent, 9, isCvdEnabled, []));
     
     // Footer (solo si incluye header EDIFACT y no es Type B)
     const isFtrEnabled = this.isFhlSegmentEnabled('FTR', policy) && !policy.useTypeBHeader;
     if (includeHeader && !policy.useTypeBHeader) {
-      segments.push(this.createFhlSegment('FTR', this.buildFwbFooter(policy), 9, isFtrEnabled, []));
+      segments.push(this.createFhlSegment('FTR', this.buildFwbFooter(policy), 10, isFtrEnabled, []));
     } else {
-      segments.push(this.createFhlSegment('FTR', '', 9, false, []));
+      segments.push(this.createFhlSegment('FTR', '', 10, false, []));
     }
     
     return segments;
@@ -1743,29 +1880,38 @@ export class CargoImpService {
     const hbsContent = this.buildHbsSegment(house, shipment, policy);
     segments.push(this.createFhlSegment('HBS', hbsContent, 2, true, []));
     
+    // TXT - Free Text (Nature of Goods completa, sin códigos HS que van en HTS)
+    const rawNature = normalize(house.natureOfGoods, 70, true, false) || '';
+    // Limpiar: quitar todo desde "HS" en adelante (ej: "FRESH CUT FLOWERS PERISHABLE HS 060311" → "FRESH CUT FLOWERS PERISHABLE")
+    const fullNatureOfGoods = rawNature.replace(/\s*HS\s*.*/i, '').trim();
+    const txtContent = fullNatureOfGoods ? `TXT/${fullNatureOfGoods}` : '';
+    if (txtContent) {
+      segments.push(this.createFhlSegment('TXT', txtContent, 3, true, []));
+    }
+    
     // HTS - Harmonized codes (si existen)
     if (house.htsCodes && house.htsCodes.length > 0) {
       const htsContent = `HTS/${house.htsCodes[0]}`;
-      segments.push(this.createFhlSegment('HTS', htsContent, 3, true, []));
+      segments.push(this.createFhlSegment('HTS', htsContent, 4, true, []));
     }
     
     // OCI
     const ociContent = this.buildFhlOciSegment(house, shipment, policy);
     if (ociContent) {
-      segments.push(this.createFhlSegment('OCI', ociContent, 4, true, []));
+      segments.push(this.createFhlSegment('OCI', ociContent, 5, true, []));
     }
     
     // SHP - Shipper de la house
     const shpContent = this.buildFhlShpSegment(house, shipment, policy);
-    segments.push(this.createFhlSegment('SHP', shpContent, 5, true, []));
+    segments.push(this.createFhlSegment('SHP', shpContent, 6, true, []));
     
     // CNE - Consignee de la house
     const cneContent = this.buildFhlCneSegment(house, shipment, policy);
-    segments.push(this.createFhlSegment('CNE', cneContent, 6, true, []));
+    segments.push(this.createFhlSegment('CNE', cneContent, 7, true, []));
     
     // CVD
     const cvdContent = `CVD/${shipment.currency}/PP/NVD/NCV/XXX`;
-    segments.push(this.createFhlSegment('CVD', cvdContent, 7, true, []));
+    segments.push(this.createFhlSegment('CVD', cvdContent, 8, true, []));
     
     // Caso 8: NO incluye footer EDIFACT por HAWB
     
@@ -1830,22 +1976,28 @@ export class CargoImpService {
   /**
    * Construye segmento HBS (House Bill Summary)
    * Formato FHL/2: HBS/HAWB/ORIG-DEST/piezas/Kpeso/descrip
-   * Formato FHL/4: HBS/HAWB/ORIG-DEST/piezas/Kpeso//descrip (doble slash)
+   * Formato FHL/4: HBS/HAWB/ORIG-DEST/piezas/Kpeso/SLAC/descrip
+   * 
+   * NOTA: La descripción completa (natureOfGoods) se envía en el segmento TXT.
+   * En HBS se usa "CUT FLOWERS" fijo (máx 11 chars).
+   * SLAC = Shipper's Load And Count, mismo valor que las piezas.
    */
   private buildHbsSegment(house: InternalHouseBill, shipment: InternalShipment, policy: AirlinePolicy): string {
     const origin = (house.origin || shipment.origin).toUpperCase();
     const destination = normalizeDestination(house.destination || shipment.destination);
-    const natureOfGoods = normalize(house.natureOfGoods, 11, false, false) || 'CUTFLOWERS';
+    // Descripción fija en HBS - la descripción completa va en TXT
+    const natureOfGoods = 'CUT FLOWERS';
     
     // Normalizar HAWB: sin guiones y con prefijos especiales (CM, SK, LG → 0CM, 0SK, 0LG)
     const hawbPrefixes = policy.hawbPrefixAdd0 || ['CM', 'SK', 'LG'];
     let hawbNumber = normalizeHawbForMessage(house.hawbNumber);
     hawbNumber = normalizeHawbNumber(hawbNumber, hawbPrefixes);
     
-    // Diferencia entre FHL/2 y FHL/4: doble slash antes de descripción
-    const separator = policy.fhlVersion === 'FHL/4' ? '//' : '/';
+    // FHL/4: incluir SLAC (piezas) entre peso y descripción
+    // FHL/2: separador simple
+    const slac = house.pieces.toString();
     
-    return `HBS/${hawbNumber}/${origin}${destination}/${house.pieces}/K${formatNumber(house.weight)}${separator}${natureOfGoods}`;
+    return `HBS/${hawbNumber}/${origin}${destination}/${house.pieces}/K${formatNumber(house.weight)}/${slac}/${natureOfGoods}`;
   }
 
   private buildFhlOciSegment(house: InternalHouseBill, shipment: InternalShipment, policy: AirlinePolicy): string {

@@ -149,13 +149,38 @@ export function getEffectiveAirlinePolicy(awbPrefix: string): AirlinePolicy {
   const effectiveFhlEnabled = override.enabledFhlSegments || defaultPolicy.enabledFhlSegments || ALL_FHL_SEGMENTS;
   const effectiveFhlDisabled = override.disabledFhlSegments || defaultPolicy.disabledFhlSegments || [];
   
+  // Obtener enabledSegments y disabledSegments base
+  let enabledSegments = [...(override.enabledSegments || defaultPolicy.enabledSegments || [])];
+  const disabledSegments = override.disabledSegments || defaultPolicy.disabledSegments || [];
+  
+  // Auto-agregar NV y NS si NH está habilitado Y no están explícitamente deshabilitados
+  // (migración de políticas antiguas que no tenían estos segmentos)
+  if (enabledSegments.includes('NH')) {
+    // Solo agregar NV si no está ya Y no está en disabledSegments
+    if (!enabledSegments.includes('NV') && !disabledSegments.includes('NV')) {
+      const nhIndex = enabledSegments.indexOf('NH');
+      enabledSegments = [...enabledSegments.slice(0, nhIndex + 1), 'NV', ...enabledSegments.slice(nhIndex + 1)];
+    }
+    // Solo agregar NS si no está ya Y no está en disabledSegments  
+    if (!enabledSegments.includes('NS') && !disabledSegments.includes('NS')) {
+      const nvIndex = enabledSegments.indexOf('NV');
+      if (nvIndex >= 0) {
+        enabledSegments = [...enabledSegments.slice(0, nvIndex + 1), 'NS', ...enabledSegments.slice(nvIndex + 1)];
+      } else {
+        // Si NV no está, insertar NS después de NH
+        const nhIndex = enabledSegments.indexOf('NH');
+        enabledSegments = [...enabledSegments.slice(0, nhIndex + 1), 'NS', ...enabledSegments.slice(nhIndex + 1)];
+      }
+    }
+  }
+  
   // Merge default + override
   const effectivePolicy: AirlinePolicy = {
     ...defaultPolicy,
     ...override,
-    // Asegurar arrays válidos para FWB
-    enabledSegments: override.enabledSegments || defaultPolicy.enabledSegments || [],
-    disabledSegments: override.disabledSegments || defaultPolicy.disabledSegments || [],
+    // Asegurar arrays válidos para FWB (con NV y NS migrados)
+    enabledSegments: enabledSegments,
+    disabledSegments: disabledSegments,
     // Para FHL: usar todos por defecto si no hay configuración
     enabledFhlSegments: effectiveFhlEnabled,
     disabledFhlSegments: effectiveFhlDisabled,

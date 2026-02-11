@@ -243,6 +243,10 @@ export interface AlsoNotifyParty {
     identifier: string; // TE, FX, EM
     number: string;
   };
+  /**
+   * Email de la parte a notificar
+   */
+  email?: string;
 }
 
 export interface Dimension {
@@ -357,6 +361,12 @@ export interface DescartesTransmitConfig {
   password: string;
   /** Si la transmisión está habilitada */
   enabled?: boolean;
+  /**
+   * URL del proxy en tu backend para evitar CORS.
+   * Si se proporciona, el componente enviará a este URL y el backend hace la llamada a Descartes.
+   * Ejemplo: "/api/descartes/proxy" o "https://tudominio.com/api/descartes/proxy"
+   */
+  proxyUrl?: string;
 }
 
 export interface InternalShipment {
@@ -520,9 +530,21 @@ export interface InternalHouseBill {
   packageQuantity?: number;    // Número de bultos/cajas (diferente de pieces)
   chargeableWeight?: number;   // Peso cobrable (volumétrico o real)
   volume?: number;             // Volumen en CBM
+  volumeCubicMeters?: number;  // Volumen en metros cúbicos para segmento NV (EDI)
   customerReference?: string;  // Referencia del cliente / número de pedido
   incoterm?: string;           // Término de comercio (CIP, FOB, etc.)
   informationCode?: string;    // Código de información (NDA = No Dangerous Articles)
+  
+  // ============================================================
+  // DIMENSIONES PARA CARGO-XML (LinearSpatialDimension)
+  // ============================================================
+  dimensions?: Dimension[];    // Múltiples sets de dimensiones (LxWxH x piezas)
+  
+  // ============================================================
+  // CAMPOS PARA NOTAS CONTABLES Y NOTIFY PARTY (XFZB)
+  // ============================================================
+  alsoNotify?: AlsoNotifyParty;  // Parte a notificar → IncludedAccountingNote "NOTIFY TO: ..."
+  accounting?: AccountingInfo[]; // Información contable adicional
 }
 
 // Type alias para compatibilidad con componentes

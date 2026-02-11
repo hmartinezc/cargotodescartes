@@ -33,6 +33,12 @@ export interface DescartesCredentials {
   username: string;
   /** Contraseña para Basic Auth */
   password: string;
+  /** 
+   * URL del proxy en tu backend (para evitar CORS).
+   * Si se proporciona, el frontend envía a este URL y el backend hace la llamada a Descartes.
+   * Ejemplo: "https://operflor.avatarcargo.com/api/descartes/proxy"
+   */
+  proxyUrl?: string;
 }
 
 /**
@@ -76,6 +82,10 @@ export interface TransmissionResult {
   httpStatus?: number;
   /** Mensaje de respuesta del servidor (texto crudo) */
   responseMessage?: string;
+  /** Respuesta completa del servidor (raw) para debugging */
+  responseRaw?: string;
+  /** Mensaje que se envió (request body) para debugging */
+  requestBody?: string;
   /** Respuesta XML parseada de Descartes */
   descartesResponse?: DescartesXmlResponse;
   /** Error si falló */
@@ -206,6 +216,7 @@ export class DescartesTransmitService {
 
   /**
    * Envía un mensaje individual a Descartes
+   * Si hay proxyUrl configurado, envía al proxy en lugar de directo a Descartes
    */
   async sendMessage(
     message: string,
@@ -225,14 +236,37 @@ export class DescartesTransmitService {
     }
 
     try {
-      const response = await fetch(this.credentials.endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-CARGO-IMP',
-          'Authorization': this.getAuthHeader()
-        },
-        body: message
-      });
+      let response: Response;
+      
+      // Si hay proxyUrl, enviar al proxy del backend (evita CORS)
+      if (this.credentials.proxyUrl) {
+        console.log(`🔄 Usando proxy: ${this.credentials.proxyUrl}`);
+        response = await fetch(this.credentials.proxyUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            // Datos que el proxy necesita para hacer la llamada a Descartes
+            descartesEndpoint: this.credentials.endpoint,
+            username: this.credentials.username,
+            password: this.credentials.password,
+            message: message,
+            messageType: messageType,
+            reference: reference
+          })
+        });
+      } else {
+        // Llamada directa a Descartes (puede fallar por CORS)
+        response = await fetch(this.credentials.endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-CARGO-IMP',
+            'Authorization': this.getAuthHeader()
+          },
+          body: message
+        });
+      }
 
       const responseText = await response.text();
       
@@ -249,6 +283,8 @@ export class DescartesTransmitService {
           reference,
           httpStatus: response.status,
           responseMessage: descartesResponse.status || 'OK',
+          responseRaw: responseText,
+          requestBody: message,
           descartesResponse,
           timestamp
         };
@@ -268,6 +304,8 @@ export class DescartesTransmitService {
           reference,
           httpStatus: response.status,
           responseMessage: responseText,
+          responseRaw: responseText,
+          requestBody: message,
           descartesResponse,
           error: errorMsg,
           timestamp
@@ -278,6 +316,7 @@ export class DescartesTransmitService {
         success: false,
         messageType,
         reference,
+        requestBody: message,
         error: error instanceof Error ? error.message : 'Error de conexión desconocido',
         timestamp
       };

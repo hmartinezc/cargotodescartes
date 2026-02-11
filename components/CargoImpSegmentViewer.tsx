@@ -50,6 +50,8 @@ const SEGMENT_ICONS: Record<string, JSX.Element> = {
   'RTD': <Hash size={14} />,
   'NG': <Tag size={14} />,
   'NH': <Tag size={14} />,
+  'NV': <Hash size={14} />,
+  'NS': <Package size={14} />,
   'HBS': <Package size={14} />,
   'HTS': <Tag size={14} />,
   'OTH': <DollarSign size={14} />,
@@ -98,6 +100,8 @@ const SEGMENT_COLORS: Record<string, { bg: string; border: string; text: string 
   // Mercancía
   'NG': { bg: 'bg-indigo-50', border: 'border-indigo-300', text: 'text-indigo-700' },
   'NH': { bg: 'bg-indigo-50', border: 'border-indigo-300', text: 'text-indigo-700' },
+  'NV': { bg: 'bg-cyan-50', border: 'border-cyan-300', text: 'text-cyan-700' },
+  'NS': { bg: 'bg-teal-50', border: 'border-teal-300', text: 'text-teal-700' },
   'HTS': { bg: 'bg-indigo-50', border: 'border-indigo-300', text: 'text-indigo-700' },
   
   // Manejo especial / Seguridad

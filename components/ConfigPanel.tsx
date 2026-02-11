@@ -22,7 +22,8 @@ import {
   isTypeBEnabled,
   setTypeBEnabled,
   getTypeBConfig,
-  updateTypeBConfig
+  updateTypeBConfig,
+  updateAirlinePolicy
 } from '../services/runtimeConfigStore';
 
 // ============================================================
@@ -132,7 +133,15 @@ export const ConfigPanel: FunctionComponent<ConfigPanelProps> = ({ isOpen, onClo
   useEffect(() => {
     if (isOpen) {
       // Cargar desde la variable en memoria (sessionConfig)
-      setConfig({ ...sessionConfig });
+      // IMPORTANTE: Las políticas de aerolíneas SIEMPRE se cargan desde DEFAULT_AIRLINE_POLICIES
+      // para que reflejen la configuración actual del código (a futuro vendrá del backend)
+      setConfig({ 
+        ...sessionConfig,
+        cargoImp: {
+          ...sessionConfig.cargoImp,
+          airlinePolicies: { ...DEFAULT_AIRLINE_POLICIES }
+        }
+      });
       // Cargar config Type B
       setTypeBEnabledLocal(isTypeBEnabled());
       setTypeBConfigLocal(getTypeBConfig());
@@ -1109,7 +1118,27 @@ ${config.securityOci?.regulatedAgentNumber ? `  { "isoCountryCode": "CO", "infor
                       if (b === 'DEFAULT') return -1;
                       return a.localeCompare(b);
                     })
-                    .map(([code, policy]) => {
+                    .map(([code, rawPolicy]) => {
+                      // Migrar políticas antiguas: agregar NV y NS si NH está habilitado
+                      let enabledSegs = [...(rawPolicy.enabledSegments || [])];
+                      const disabledSegs = rawPolicy.disabledSegments || [];
+                      if (enabledSegs.includes('NH')) {
+                        if (!enabledSegs.includes('NV') && !disabledSegs.includes('NV')) {
+                          const nhIdx = enabledSegs.indexOf('NH');
+                          enabledSegs = [...enabledSegs.slice(0, nhIdx + 1), 'NV', ...enabledSegs.slice(nhIdx + 1)];
+                        }
+                        if (!enabledSegs.includes('NS') && !disabledSegs.includes('NS')) {
+                          const nvIdx = enabledSegs.indexOf('NV');
+                          if (nvIdx >= 0) {
+                            enabledSegs = [...enabledSegs.slice(0, nvIdx + 1), 'NS', ...enabledSegs.slice(nvIdx + 1)];
+                          } else {
+                            const nhIdx = enabledSegs.indexOf('NH');
+                            enabledSegs = [...enabledSegs.slice(0, nhIdx + 1), 'NS', ...enabledSegs.slice(nhIdx + 1)];
+                          }
+                        }
+                      }
+                      const policy = { ...rawPolicy, enabledSegments: enabledSegs };
+                      
                       const allSegments = Object.keys(FWB_SEGMENTS);
                       const policyCase = Math.floor((policy.policy || 20) / 10);
                       
@@ -1174,24 +1203,24 @@ ${config.securityOci?.regulatedAgentNumber ? `  { "isoCountryCode": "CO", "infor
                                   const caseNum = Math.floor(newPolicyValue / 10);
                                   switch(caseNum) {
                                     case 2: // Caso 2: Estándar
-                                      enabledFwbSegs = ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'];
+                                      enabledFwbSegs = ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'];
                                       disabledFwbSegs = allFwbSegs.filter(s => !enabledFwbSegs.includes(s));
                                       break;
                                     case 4: // Caso 4: FWB_NEW
-                                      enabledFwbSegs = ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'OTH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'];
+                                      enabledFwbSegs = ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'OTH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'];
                                       disabledFwbSegs = allFwbSegs.filter(s => !enabledFwbSegs.includes(s));
                                       break;
                                     case 5: // Caso 5: FHL concatenados
-                                      enabledFwbSegs = ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'];
+                                      enabledFwbSegs = ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'];
                                       disabledFwbSegs = allFwbSegs.filter(s => !enabledFwbSegs.includes(s));
                                       break;
                                     case 7: // Caso 7: DHL/ABX
-                                      enabledFwbSegs = ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'NFY', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'];
+                                      enabledFwbSegs = ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'NFY', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'];
                                       disabledFwbSegs = allFwbSegs.filter(s => !enabledFwbSegs.includes(s));
                                       fhlAlwaysWithHeader = true;
                                       break;
                                     case 8: // Caso 8: Todas FHL en 1
-                                      enabledFwbSegs = ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'ISU', 'SPH', 'OCI', 'FTR'];
+                                      enabledFwbSegs = ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'ISU', 'SPH', 'OCI', 'FTR'];
                                       disabledFwbSegs = allFwbSegs.filter(s => !enabledFwbSegs.includes(s));
                                       break;
                                   }
@@ -1356,6 +1385,9 @@ ${config.securityOci?.regulatedAgentNumber ? `  { "isoCountryCode": "CO", "infor
                                           [code]: { ...policy, enabledSegments: newEnabled, disabledSegments: newDisabled }
                                         };
                                         updateConfig('cargoImp', { ...config.cargoImp, airlinePolicies: updated });
+                                        
+                                        // Sincronizar con runtimeConfigStore para que el EDI se actualice
+                                        updateAirlinePolicy(code, { enabledSegments: newEnabled, disabledSegments: newDisabled });
                                       }}
                                       className={`p-1 rounded text-[9px] font-mono font-bold text-center transition-all ${
                                         isEnabled 

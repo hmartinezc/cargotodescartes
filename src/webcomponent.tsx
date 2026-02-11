@@ -1055,6 +1055,9 @@ function normalizeHouseBill(house: any): any {
     // Cargo
     pieces: house.pieces ?? 0,
     weight: house.weight ?? 0,
+    chargeableWeight: house.chargeableWeight ?? house.pesoFacturable ?? undefined,
+    volume: house.volume ?? house.volumen ?? undefined,
+    volumeCubicMeters: house.volumeCubicMeters ?? house.volumenM3 ?? house.cbm ?? house.volume ?? undefined,
     natureOfGoods: house.natureOfGoods || house.descripcion || '',
     commonName: house.commonName || '',
     htsCodes: house.htsCodes || [],

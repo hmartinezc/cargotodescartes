@@ -10,7 +10,7 @@
  * ============================================================
  */
 
-import { InternalShipment, InternalHouseBill } from '../types';
+import { InternalShipment, InternalHouseBill, Dimension, Party } from '../types';
 
 // ============================================================
 // INTERFACES
@@ -152,11 +152,272 @@ function getStateName(stateCode: string | undefined): string {
 }
 
 // ============================================================
+// OCI (IncludedCustomsNote) HELPER - Usa lógica del EDI
+// ============================================================
+
+/**
+ * Genera XML para IncludedCustomsNote (OCI) usando la lógica del EDI.
+ * Formato IATA Cargo-XML:
+ * <IncludedCustomsNote>
+ *   <CountryID>CO</CountryID>
+ *   <SubjectCode>SHP</SubjectCode>  <!-- SHP=Shipper, CNE=Consignee, AGT=Agent -->
+ *   <ContentCode>T</ContentCode>    <!-- T=TIN/Tax ID, RA=Regulated Agent, etc. -->
+ *   <Content>901234567</Content>
+ * </IncludedCustomsNote>
+ * 
+ * @param indent - número de espacios para indentación (8 para XFWB, 12 para XFZB)
+ */
+function generateIncludedCustomsNoteXml(
+  shipper: Party | undefined,
+  consignee: Party | undefined,
+  shipperCountry: string,
+  consigneeCountry: string,
+  indent: number = 8
+): string {
+  const notes: string[] = [];
+  const pad = ' '.repeat(indent);
+  const pad2 = ' '.repeat(indent + 4);
+
+  // Lógica según país de origen (Ecuador vs otros) - igual que buildOciSegment del EDI
+  const consigneeTaxId = consignee?.taxId || '';
+  const shipperTaxId = shipper?.taxId || '';
+
+  // OCI para Consignee TIN (siempre si hay taxId)
+  if (consigneeTaxId) {
+    notes.push(`${pad}<ram:IncludedCustomsNote>
+${pad2}<ram:CountryID>${consigneeCountry}</ram:CountryID>
+${pad2}<ram:SubjectCode>CNE</ram:SubjectCode>
+${pad2}<ram:ContentCode>T</ram:ContentCode>
+${pad2}<ram:Content>${escapeXml(consigneeTaxId.replace(/\s/g, ''))}</ram:Content>
+${pad}</ram:IncludedCustomsNote>`);
+  }
+
+  // OCI para Shipper TIN (opcional, si hay taxId)
+  if (shipperTaxId) {
+    notes.push(`${pad}<ram:IncludedCustomsNote>
+${pad2}<ram:CountryID>${shipperCountry}</ram:CountryID>
+${pad2}<ram:SubjectCode>SHP</ram:SubjectCode>
+${pad2}<ram:ContentCode>T</ram:ContentCode>
+${pad2}<ram:Content>${escapeXml(shipperTaxId.replace(/\s/g, ''))}</ram:Content>
+${pad}</ram:IncludedCustomsNote>`);
+  }
+
+  return notes.length > 0 ? '\n' + notes.join('\n') : '';
+}
+
+// ============================================================
+// EMAIL HELPER - Genera URIEmailCommunication
+// ============================================================
+
+function generateEmailXml(email: string | undefined): string {
+  if (!email || !email.trim()) return '';
+  return `
+                <ram:URIEmailCommunication>
+                    <ram:URIID>${escapeXml(email.trim())}</ram:URIID>
+                </ram:URIEmailCommunication>`;
+}
+
+// ============================================================
+// DIMENSIONS HELPER - Genera LinearSpatialDimension
+// ============================================================
+
+/**
+ * Genera LinearSpatialDimension para XFWB/XFZB
+ * NOTA: Solo genera el nodo LinearSpatialDimension, NO el TransportLogisticsPackage
+ * porque va DENTRO de un TransportLogisticsPackage existente (según XML proveedor)
+ */
+function generateDimensionsXml(dimensions: Dimension[] | undefined): string {
+  if (!dimensions || dimensions.length === 0) return '';
+
+  // Tomar primera dimensión (la más común en consolidados de flores)
+  // Si hay múltiples, se puede expandir a generar múltiples LinearSpatialDimension
+  const dim = dimensions[0];
+  const unitCode = dim.unit === 'INCH' ? 'INH' : 'CMT';
+  
+  return `
+                    <ram:LinearSpatialDimension>
+                        <ram:WidthMeasure unitCode="${unitCode}">${dim.width}</ram:WidthMeasure>
+                        <ram:LengthMeasure unitCode="${unitCode}">${dim.length}</ram:LengthMeasure>
+                        <ram:HeightMeasure unitCode="${unitCode}">${dim.height}</ram:HeightMeasure>
+                    </ram:LinearSpatialDimension>`;
+}
+
+/**
+ * Genera dimensiones para XFZB (House) - como nodo interno de TransportLogisticsPackage
+ */
+function generateDimensionsXmlForHouse(dimensions: Dimension[] | undefined): string {
+  if (!dimensions || dimensions.length === 0) return '';
+
+  // Tomar primera dimensión
+  const dim = dimensions[0];
+  const unitCode = dim.unit === 'INCH' ? 'INH' : 'CMT';
+  
+  return `
+                    <ram:LinearSpatialDimension>
+                        <ram:WidthMeasure unitCode="${unitCode}">${dim.width}</ram:WidthMeasure>
+                        <ram:LengthMeasure unitCode="${unitCode}">${dim.length}</ram:LengthMeasure>
+                        <ram:HeightMeasure unitCode="${unitCode}">${dim.height}</ram:HeightMeasure>
+                    </ram:LinearSpatialDimension>`;
+}
+
+// ============================================================
+// VALIDACIÓN DE DATOS REQUERIDOS
+// ============================================================
+
+export interface ValidationError {
+  field: string;
+  message: string;
+  severity: 'error' | 'warning';
+}
+
+/**
+ * Valida que los datos del shipment sean suficientes para generar XFWB
+ * Retorna lista de errores/warnings
+ */
+export function validateXFWBData(shipment: InternalShipment): ValidationError[] {
+  const errors: ValidationError[] = [];
+
+  // Campos obligatorios críticos
+  if (!shipment.awbNumber) {
+    errors.push({ field: 'awbNumber', message: 'Número de AWB requerido', severity: 'error' });
+  } else if (!/^\d{3}-\d{8}$/.test(shipment.awbNumber.replace(/\s/g, ''))) {
+    errors.push({ field: 'awbNumber', message: 'Formato AWB debe ser XXX-XXXXXXXX', severity: 'error' });
+  }
+
+  if (!shipment.origin || shipment.origin.length !== 3) {
+    errors.push({ field: 'origin', message: 'Origen (código IATA 3 letras) requerido', severity: 'error' });
+  }
+
+  if (!shipment.destination || shipment.destination.length !== 3) {
+    errors.push({ field: 'destination', message: 'Destino (código IATA 3 letras) requerido', severity: 'error' });
+  }
+
+  if (!shipment.weight || shipment.weight <= 0) {
+    errors.push({ field: 'weight', message: 'Peso debe ser mayor a 0', severity: 'error' });
+  }
+
+  if (!shipment.pieces || shipment.pieces <= 0) {
+    errors.push({ field: 'pieces', message: 'Piezas debe ser mayor a 0', severity: 'error' });
+  }
+
+  // Shipper
+  if (!shipment.shipper?.name) {
+    errors.push({ field: 'shipper.name', message: 'Nombre del shipper requerido', severity: 'error' });
+  }
+  if (!shipment.shipper?.address?.place) {
+    errors.push({ field: 'shipper.address.place', message: 'Ciudad del shipper requerida', severity: 'error' });
+  }
+  if (!shipment.shipper?.address?.countryCode) {
+    errors.push({ field: 'shipper.address.countryCode', message: 'País del shipper requerido', severity: 'error' });
+  }
+
+  // Consignee
+  if (!shipment.consignee?.name) {
+    errors.push({ field: 'consignee.name', message: 'Nombre del consignee requerido', severity: 'error' });
+  }
+  if (!shipment.consignee?.address?.place) {
+    errors.push({ field: 'consignee.address.place', message: 'Ciudad del consignee requerida', severity: 'error' });
+  }
+  if (!shipment.consignee?.address?.countryCode) {
+    errors.push({ field: 'consignee.address.countryCode', message: 'País del consignee requerido', severity: 'error' });
+  }
+
+  // Agent (opcional pero recomendado)
+  if (!shipment.agent?.name) {
+    errors.push({ field: 'agent.name', message: 'Nombre del agente recomendado', severity: 'warning' });
+  }
+  if (!shipment.agent?.iataCode) {
+    errors.push({ field: 'agent.iataCode', message: 'Código IATA del agente recomendado', severity: 'warning' });
+  }
+
+  // Vuelos (recomendado para transmisión completa)
+  if (!shipment.flights || shipment.flights.length === 0) {
+    errors.push({ field: 'flights', message: 'Al menos un vuelo recomendado para XFWB', severity: 'warning' });
+  } else {
+    shipment.flights.forEach((flight, idx) => {
+      if (!flight.flightNumber) {
+        errors.push({ field: `flights[${idx}].flightNumber`, message: 'Número de vuelo requerido', severity: 'warning' });
+      }
+      if (!flight.carrierCode) {
+        errors.push({ field: `flights[${idx}].carrierCode`, message: 'Código de aerolínea requerido', severity: 'warning' });
+      }
+    });
+  }
+
+  // Consolidado: verificar houses
+  if (shipment.hasHouses) {
+    if (!shipment.houseBills || shipment.houseBills.length === 0) {
+      errors.push({ field: 'houseBills', message: 'AWB consolidado debe tener al menos 1 house', severity: 'error' });
+    }
+  }
+
+  return errors;
+}
+
+/**
+ * Valida que los datos del house sean suficientes para generar XFZB
+ */
+export function validateXFZBData(house: InternalHouseBill, shipment: InternalShipment): ValidationError[] {
+  const errors: ValidationError[] = [];
+
+  if (!house.hawbNumber) {
+    errors.push({ field: 'hawbNumber', message: 'Número de HAWB requerido', severity: 'error' });
+  }
+
+  if (!house.weight || house.weight <= 0) {
+    errors.push({ field: 'weight', message: 'Peso del house debe ser mayor a 0', severity: 'error' });
+  }
+
+  if (!house.pieces || house.pieces <= 0) {
+    errors.push({ field: 'pieces', message: 'Piezas del house debe ser mayor a 0', severity: 'error' });
+  }
+
+  // Shipper del house
+  const houseShipper = house.shipper || { name: house.shipperName };
+  if (!houseShipper.name) {
+    errors.push({ field: 'shipper.name', message: 'Nombre del shipper del house requerido', severity: 'error' });
+  }
+
+  // Consignee del house
+  const houseConsignee = house.consignee || { name: house.consigneeName };
+  if (!houseConsignee.name) {
+    errors.push({ field: 'consignee.name', message: 'Nombre del consignee del house requerido', severity: 'error' });
+  }
+
+  // Referencia al master AWB
+  if (!shipment.awbNumber) {
+    errors.push({ field: 'awbNumber', message: 'AWB master requerido para referencia en XFZB', severity: 'error' });
+  }
+
+  return errors;
+}
+
+// ============================================================
 // XFWB (MASTER WAYBILL) GENERATOR
 // ============================================================
 
 export function generateXFWB(shipment: InternalShipment): CargoXmlResult {
   const errors: string[] = [];
+  
+  // Validar datos antes de generar
+  const validationErrors = validateXFWBData(shipment);
+  const criticalErrors = validationErrors.filter(e => e.severity === 'error');
+  
+  if (criticalErrors.length > 0) {
+    return {
+      type: 'XFWB',
+      awbNumber: shipment.awbNumber || '',
+      xmlContent: '',
+      isValid: false,
+      errors: criticalErrors.map(e => `${e.field}: ${e.message}`),
+      timestamp: new Date().toISOString()
+    };
+  }
+  
+  // Agregar warnings (no bloquean generación)
+  validationErrors.filter(e => e.severity === 'warning').forEach(w => {
+    console.warn(`[XFWB Warning] ${w.field}: ${w.message}`);
+  });
   const timestamp = new Date().toISOString();
   
   try {
@@ -212,15 +473,16 @@ export function generateXFWB(shipment: InternalShipment): CargoXmlResult {
     
     // SPH codes
     const sphCodes = shipment.specialHandlingCodes || ['EAP', 'PER'];
-    const sphXml = sphCodes.map(code => `
-        <ram:HandlingSPHInstructions>
+    const sphXml = sphCodes.map(code => 
+      `        <ram:HandlingSPHInstructions>
             <ram:DescriptionCode>${code}</ram:DescriptionCode>
-        </ram:HandlingSPHInstructions>`).join('');
+        </ram:HandlingSPHInstructions>`).join('\n');
     
     // HTS codes
     const htsCodes = getUniqueHtsCodes(shipment);
-    const htsXml = htsCodes.map(code => `
-                <ram:TypeCode>${code}</ram:TypeCode>`).join('');
+    const htsXml = htsCodes.length > 0 
+      ? '\n' + htsCodes.map(code => `                <ram:TypeCode>${code}</ram:TypeCode>`).join('\n')
+      : '';
     
     // Vuelos
     const flightsXml = generateFlightsXml(shipment);
@@ -232,12 +494,19 @@ export function generateXFWB(shipment: InternalShipment): CargoXmlResult {
     const goodsDescription = escapeXml(getGoodsDescription(shipment));
     
     // Construir XML
+    // Determinar TypeCode: 740 = Direct AWB, 741 = Master AWB (consolidación)
+    const typeCode = shipment.hasHouses ? '741' : '740';
+    // ContentCode: C = Consolidation, M = Master/Direct
+    const contentCode = shipment.hasHouses ? 'C' : 'M';
+    // Número de houses para ConsignmentItemQuantity
+    const houseCount = shipment.houseBills?.length || 0;
+    
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <rsm:Waybill ${XFWB_NAMESPACES}>
     <rsm:MessageHeaderDocument>
         <ram:ID>${awbNumber}</ram:ID>
-        <ram:Name>Master Air Waybill</ram:Name>
-        <ram:TypeCode>741</ram:TypeCode>
+        <ram:Name>${shipment.hasHouses ? 'Master Air Waybill' : 'Air Waybill'}</ram:Name>
+        <ram:TypeCode>${typeCode}</ram:TypeCode>
         <ram:IssueDateTime>${issueDateTime}</ram:IssueDateTime>
         <ram:PurposeCode>Creation</ram:PurposeCode>
         <ram:VersionID>3.00</ram:VersionID>
@@ -252,7 +521,7 @@ export function generateXFWB(shipment: InternalShipment): CargoXmlResult {
     <rsm:BusinessHeaderDocument>
         <ram:ID>${awbNumber}</ram:ID>
         <ram:IncludedHeaderNote>
-            <ram:ContentCode>C</ram:ContentCode>
+            <ram:ContentCode>${contentCode}</ram:ContentCode>
             <ram:Content>${goodsDescription}</ram:Content>
         </ram:IncludedHeaderNote>
         <ram:SignatoryConsignorAuthentication>
@@ -284,7 +553,8 @@ export function generateXFWB(shipment: InternalShipment): CargoXmlResult {
         <ram:FinalDestinationLocation>
             <ram:ID>${shipment.destination}</ram:ID>
         </ram:FinalDestinationLocation>
-${flightsXml}${sphXml}${accountingXml}
+${flightsXml}
+${sphXml}${accountingXml}
         <ram:ApplicableOriginCurrencyExchange>
             <ram:SourceCurrencyCode>${currency}</ram:SourceCurrencyCode>
         </ram:ApplicableOriginCurrencyExchange>
@@ -362,6 +632,22 @@ export function generateXFZB(shipment: InternalShipment, house: InternalHouseBil
   const errors: string[] = [];
   const timestamp = new Date().toISOString();
   
+  // Validar datos antes de generar
+  const validationErrors = validateXFZBData(house, shipment);
+  const criticalErrors = validationErrors.filter(e => e.severity === 'error');
+  
+  if (criticalErrors.length > 0) {
+    return {
+      type: 'XFZB',
+      awbNumber: shipment.awbNumber || '',
+      hawbNumber: house.hawbNumber || '',
+      xmlContent: '',
+      isValid: false,
+      errors: criticalErrors.map(e => `${e.field}: ${e.message}`),
+      timestamp
+    };
+  }
+  
   try {
     const awbNumber = formatAwbNumber(shipment.awbNumber);
     const hawbNumber = house.hawbNumber;
@@ -376,15 +662,16 @@ export function generateXFZB(shipment: InternalShipment, house: InternalHouseBil
     
     // HTS codes de la house
     const htsCodes = house.htsCodes || [];
-    const htsXml = htsCodes.map(code => `
-                <ram:TypeCode>${code}</ram:TypeCode>`).join('');
+    const htsXml = htsCodes.length > 0 
+      ? '\n' + htsCodes.map(code => `                <ram:TypeCode>${code}</ram:TypeCode>`).join('\n')
+      : '';
     
     // SPH codes
     const sphCodes = shipment.specialHandlingCodes || ['EAP', 'PER'];
-    const sphXml = sphCodes.map(code => `
-            <ram:HandlingSPHInstructions>
+    const sphXml = sphCodes.map(code => 
+      `            <ram:HandlingSPHInstructions>
                 <ram:DescriptionCode>${code}</ram:DescriptionCode>
-            </ram:HandlingSPHInstructions>`).join('');
+            </ram:HandlingSPHInstructions>`).join('\n');
     
     // Vuelos
     const flightsXml = generateFlightsXmlForHouse(shipment);
@@ -456,7 +743,14 @@ export function generateXFZB(shipment: InternalShipment, house: InternalHouseBil
             <ram:FinalDestinationLocation>
                 <ram:ID>${house.destination || shipment.destination}</ram:ID>
             </ram:FinalDestinationLocation>
-${flightsXml}${sphXml}
+${flightsXml}
+${sphXml}${generateIncludedCustomsNoteXml(
+              houseShipper as Party,
+              houseConsignee as Party,
+              houseShipper?.address?.countryCode || 'CO',
+              houseConsignee?.address?.countryCode || 'US',
+              12
+            )}${generateAccountingNotesXmlForHouse(house, shipment)}
             <ram:AssociatedReferenceDocument>
                 <ram:ID>${awbNumber}</ram:ID>
                 <ram:TypeCode>741</ram:TypeCode>
@@ -467,7 +761,8 @@ ${flightsXml}${sphXml}
             </ram:ApplicableOriginCurrencyExchange>
             <ram:IncludedHouseConsignmentItem>
                 <ram:SequenceNumeric>1</ram:SequenceNumeric>${htsXml}
-                <ram:GrossWeightMeasure unitCode="KGM">${totalWeight}</ram:GrossWeightMeasure>
+                <ram:GrossWeightMeasure unitCode="KGM">${totalWeight}</ram:GrossWeightMeasure>${house.volume ? `
+                <ram:GrossVolumeMeasure unitCode="MTQ">${house.volume.toFixed(3)}</ram:GrossVolumeMeasure>` : ''}
                 <ram:PieceQuantity>${totalPieces}</ram:PieceQuantity>
                 <ram:NatureIdentificationTransportCargo>
                     <ram:Identification>${goodsDescription}</ram:Identification>
@@ -477,12 +772,13 @@ ${flightsXml}${sphXml}
                 </ram:OriginCountry>
                 <ram:TransportLogisticsPackage>
                     <ram:ItemQuantity>${totalPieces}</ram:ItemQuantity>
-                    <ram:GrossWeightMeasure unitCode="KGM">${totalWeight}</ram:GrossWeightMeasure>
+                    <ram:GrossWeightMeasure unitCode="KGM">${totalWeight}</ram:GrossWeightMeasure>${generateDimensionsXmlForHouse(house.dimensions)}
                 </ram:TransportLogisticsPackage>
                 <ram:ApplicableFreightRateServiceCharge>
                     <ram:CategoryCode>K</ram:CategoryCode>
                     <ram:CommodityItemID>${shipment.commodityCode || '1421'}</ram:CommodityItemID>
-                    <ram:ChargeableWeightMeasure unitCode="KGM">${totalWeight}</ram:ChargeableWeightMeasure>
+                    <ram:ChargeableWeightMeasure unitCode="KGM">${house.chargeableWeight || totalWeight}</ram:ChargeableWeightMeasure>${house.totalCharge ? `
+                    <ram:AppliedAmount currencyID="${currency}">${house.totalCharge.toFixed(2)}</ram:AppliedAmount>` : ''}
                 </ram:ApplicableFreightRateServiceCharge>
             </ram:IncludedHouseConsignmentItem>
         </ram:IncludedHouseConsignment>
@@ -545,11 +841,14 @@ function generateConsignorPartyXml(shipper: InternalShipment['shipper']): string
                 <ram:CityName>${escapeXml(shipper.address?.place || '')}</ram:CityName>
                 <ram:CountryID>${shipper.address?.countryCode || 'CO'}</ram:CountryID>
                 <ram:CountryName>${getCountryName(shipper.address?.countryCode || 'CO')}</ram:CountryName>
-            </ram:PostalStructuredAddress>${shipper.contact?.number ? `
-            <ram:DefinedTradeContact>
+            </ram:PostalStructuredAddress>${shipper.contact?.number || shipper.email ? `
+            <ram:DefinedTradeContact>${shipper.contact?.number ? `
                 <ram:DirectTelephoneCommunication>
                     <ram:CompleteNumber>${escapeXml(shipper.contact.number)}</ram:CompleteNumber>
-                </ram:DirectTelephoneCommunication>
+                </ram:DirectTelephoneCommunication>` : ''}${shipper.email ? `
+                <ram:URIEmailCommunication>
+                    <ram:URIID>${escapeXml(shipper.email)}</ram:URIID>
+                </ram:URIEmailCommunication>` : ''}
             </ram:DefinedTradeContact>` : ''}
         </ram:ConsignorParty>`;
 }
@@ -568,11 +867,14 @@ function generateConsigneePartyXml(consignee: InternalShipment['consignee']): st
                 <ram:CountryID>${consignee.address?.countryCode || 'US'}</ram:CountryID>
                 <ram:CountryName>${getCountryName(consignee.address?.countryCode || 'US')}</ram:CountryName>${state ? `
                 <ram:CountrySubDivisionName>${getStateName(state)}</ram:CountrySubDivisionName>` : ''}
-            </ram:PostalStructuredAddress>${consignee.contact?.number ? `
-            <ram:DefinedTradeContact>
+            </ram:PostalStructuredAddress>${consignee.contact?.number || consignee.email ? `
+            <ram:DefinedTradeContact>${consignee.contact?.number ? `
                 <ram:DirectTelephoneCommunication>
                     <ram:CompleteNumber>${escapeXml(consignee.contact.number)}</ram:CompleteNumber>
-                </ram:DirectTelephoneCommunication>
+                </ram:DirectTelephoneCommunication>` : ''}${consignee.email ? `
+                <ram:URIEmailCommunication>
+                    <ram:URIID>${escapeXml(consignee.email)}</ram:URIID>
+                </ram:URIEmailCommunication>` : ''}
             </ram:DefinedTradeContact>` : ''}
         </ram:ConsigneeParty>`;
 }
@@ -600,16 +902,20 @@ function generateHouseConsignorPartyXml(shipper: any): string {
   
   return `<ram:ConsignorParty>
                 <ram:Name>${escapeXml(name)}</ram:Name>
-                <ram:PostalStructuredAddress>
+                <ram:PostalStructuredAddress>${address.postalCode ? `
+                    <ram:PostcodeCode>${escapeXml(address.postalCode)}</ram:PostcodeCode>` : ''}
                     <ram:StreetName>${escapeXml(address.street || '')}</ram:StreetName>
                     <ram:CityName>${escapeXml(address.place || '')}</ram:CityName>
                     <ram:CountryID>${address.countryCode || 'CO'}</ram:CountryID>
                     <ram:CountryName>${getCountryName(address.countryCode || 'CO')}</ram:CountryName>
-                </ram:PostalStructuredAddress>${shipper.contact?.number ? `
-                <ram:DefinedTradeContact>
+                </ram:PostalStructuredAddress>${shipper.contact?.number || shipper.email ? `
+                <ram:DefinedTradeContact>${shipper.contact?.number ? `
                     <ram:DirectTelephoneCommunication>
                         <ram:CompleteNumber>${escapeXml(shipper.contact.number)}</ram:CompleteNumber>
-                    </ram:DirectTelephoneCommunication>
+                    </ram:DirectTelephoneCommunication>` : ''}${shipper.email ? `
+                    <ram:URIEmailCommunication>
+                        <ram:URIID>${escapeXml(shipper.email)}</ram:URIID>
+                    </ram:URIEmailCommunication>` : ''}
                 </ram:DefinedTradeContact>` : ''}
             </ram:ConsignorParty>`;
 }
@@ -623,17 +929,21 @@ function generateHouseConsigneePartyXml(consignee: any): string {
   
   return `<ram:ConsigneeParty>
                 <ram:Name>${escapeXml(name)}</ram:Name>
-                <ram:PostalStructuredAddress>
+                <ram:PostalStructuredAddress>${address.postalCode ? `
+                    <ram:PostcodeCode>${escapeXml(address.postalCode)}</ram:PostcodeCode>` : ''}
                     <ram:StreetName>${escapeXml(address.street || '')}</ram:StreetName>
                     <ram:CityName>${escapeXml(address.place || '')}</ram:CityName>
                     <ram:CountryID>${address.countryCode || 'US'}</ram:CountryID>
                     <ram:CountryName>${getCountryName(address.countryCode || 'US')}</ram:CountryName>${state ? `
                     <ram:CountrySubDivisionName>${getStateName(state)}</ram:CountrySubDivisionName>` : ''}
-                </ram:PostalStructuredAddress>${consignee.contact?.number ? `
-                <ram:DefinedTradeContact>
+                </ram:PostalStructuredAddress>${consignee.contact?.number || consignee.email ? `
+                <ram:DefinedTradeContact>${consignee.contact?.number ? `
                     <ram:DirectTelephoneCommunication>
                         <ram:CompleteNumber>${escapeXml(consignee.contact.number)}</ram:CompleteNumber>
-                    </ram:DirectTelephoneCommunication>
+                    </ram:DirectTelephoneCommunication>` : ''}${consignee.email ? `
+                    <ram:URIEmailCommunication>
+                        <ram:URIID>${escapeXml(consignee.email)}</ram:URIID>
+                    </ram:URIEmailCommunication>` : ''}
                 </ram:DefinedTradeContact>` : ''}
             </ram:ConsigneeParty>`;
 }
@@ -678,9 +988,8 @@ function generateFlightsXml(shipment: InternalShipment): string {
                     <ram:TypeCode>Airport</ram:TypeCode>
                 </ram:OccurrenceDepartureLocation>
             </ram:DepartureEvent>
-        </ram:SpecifiedLogisticsTransportMovement>
-`;
-  }).join('');
+        </ram:SpecifiedLogisticsTransportMovement>`;
+  }).join('\n');
 }
 
 function generateFlightsXmlForHouse(shipment: InternalShipment): string {
@@ -709,32 +1018,143 @@ function generateFlightsXmlForHouse(shipment: InternalShipment): string {
                         <ram:ID>${flight.origin}</ram:ID>
                     </ram:OccurrenceDepartureLocation>
                 </ram:DepartureEvent>
-            </ram:SpecifiedLogisticsTransportMovement>
-`;
-  }).join('');
+            </ram:SpecifiedLogisticsTransportMovement>`;
+  }).join('\n');
 }
 
 function generateAccountingNotesXml(shipment: InternalShipment): string {
-  if (!shipment.accounting || shipment.accounting.length === 0) return '';
+  const notes: string[] = [];
   
-  return shipment.accounting.map(acc => `
-        <ram:IncludedAccountingNote>
+  // Also Notify Party → genera múltiples IncludedAccountingNote (1 por línea de datos)
+  const notifyParty = shipment.alsoNotify;
+  if (notifyParty?.name) {
+    // Línea 1: NOTIFY TO: nombre
+    notes.push(`        <ram:IncludedAccountingNote>
             <ram:ContentCode>GEN</ram:ContentCode>
-            <ram:Content>${escapeXml(acc.accountingInformation || '')}</ram:Content>
-        </ram:IncludedAccountingNote>`).join('');
+            <ram:Content>NOTIFY TO: ${escapeXml(notifyParty.name)}</ram:Content>
+        </ram:IncludedAccountingNote>`);
+    
+    // Línea 2: Dirección con ZIP y teléfono
+    const address = notifyParty.address;
+    if (address?.street || address?.postalCode || notifyParty.contact?.number) {
+      const line2Parts: string[] = [];
+      if (address?.street) line2Parts.push(address.street);
+      if (address?.postalCode) line2Parts.push(`ZIP: ${address.postalCode}`);
+      if (notifyParty.contact?.number) line2Parts.push(`PH: ${notifyParty.contact.number}`);
+      if (line2Parts.length > 0) {
+        notes.push(`        <ram:IncludedAccountingNote>
+            <ram:ContentCode>GEN</ram:ContentCode>
+            <ram:Content>${escapeXml(line2Parts.join(' '))}</ram:Content>
+        </ram:IncludedAccountingNote>`);
+      }
+    }
+    
+    // Línea 3: Email con prefijo "EMAIL:"
+    if (notifyParty.email) {
+      notes.push(`        <ram:IncludedAccountingNote>
+            <ram:ContentCode>GEN</ram:ContentCode>
+            <ram:Content>EMAIL: ${escapeXml(notifyParty.email)}</ram:Content>
+        </ram:IncludedAccountingNote>`);
+    }
+    
+    // Línea 4: Ciudad, Estado (nombre completo), País (nombre completo)
+    if (address?.place || address?.state || address?.countryCode) {
+      const locationParts: string[] = [];
+      if (address?.place) locationParts.push(address.place);
+      if (address?.state) locationParts.push(getStateName(address.state));
+      if (address?.countryCode) locationParts.push(getCountryName(address.countryCode));
+      if (locationParts.length > 0) {
+        notes.push(`        <ram:IncludedAccountingNote>
+            <ram:ContentCode>GEN</ram:ContentCode>
+            <ram:Content>${escapeXml(locationParts.join(', '))}</ram:Content>
+        </ram:IncludedAccountingNote>`);
+      }
+    }
+  }
+  
+  // Accounting info general
+  if (shipment.accounting && shipment.accounting.length > 0) {
+    shipment.accounting.forEach(acc => {
+      if (acc.accountingInformation) {
+        notes.push(`        <ram:IncludedAccountingNote>
+            <ram:ContentCode>GEN</ram:ContentCode>
+            <ram:Content>${escapeXml(acc.accountingInformation)}</ram:Content>
+        </ram:IncludedAccountingNote>`);
+      }
+    });
+  }
+  
+  return notes.length > 0 ? '\n' + notes.join('\n') : '';
 }
 
-function generateDimensionsXml(dimensions?: InternalShipment['dimensions']): string {
-  if (!dimensions || dimensions.length === 0) return '';
+function generateAccountingNotesXmlForHouse(house: InternalHouseBill, shipment: InternalShipment): string {
+  const notes: string[] = [];
   
-  // Usar primera dimensión para el ejemplo
-  const dim = dimensions[0];
-  return `
-                    <ram:LinearSpatialDimension>
-                        <ram:WidthMeasure unitCode="CMT">${dim.width || 0}</ram:WidthMeasure>
-                        <ram:LengthMeasure unitCode="CMT">${dim.length || 0}</ram:LengthMeasure>
-                        <ram:HeightMeasure unitCode="CMT">${dim.height || 0}</ram:HeightMeasure>
-                    </ram:LinearSpatialDimension>`;
+  // Also Notify Party → genera múltiples IncludedAccountingNote (1 por línea de datos)
+  // Usa el de la house si existe, si no hereda del master
+  const notifyParty = house.alsoNotify || shipment.alsoNotify;
+  if (notifyParty?.name) {
+    // Línea 1: NOTIFY TO: nombre
+    notes.push(`            <ram:IncludedAccountingNote>
+                <ram:ContentCode>GEN</ram:ContentCode>
+                <ram:Content>NOTIFY TO: ${escapeXml(notifyParty.name)}</ram:Content>
+            </ram:IncludedAccountingNote>`);
+    
+    // Línea 2: Dirección con ZIP y teléfono
+    const address = notifyParty.address;
+    if (address?.street || address?.postalCode || notifyParty.contact?.number) {
+      const line2Parts: string[] = [];
+      if (address?.street) line2Parts.push(address.street);
+      if (address?.postalCode) line2Parts.push(`ZIP: ${address.postalCode}`);
+      if (notifyParty.contact?.number) line2Parts.push(`PH: ${notifyParty.contact.number}`);
+      if (line2Parts.length > 0) {
+        notes.push(`            <ram:IncludedAccountingNote>
+                <ram:ContentCode>GEN</ram:ContentCode>
+                <ram:Content>${escapeXml(line2Parts.join(' '))}</ram:Content>
+            </ram:IncludedAccountingNote>`);
+      }
+    }
+    
+    // Línea 3: Email con prefijo "EMAIL:"
+    if (notifyParty.email) {
+      notes.push(`            <ram:IncludedAccountingNote>
+                <ram:ContentCode>GEN</ram:ContentCode>
+                <ram:Content>EMAIL: ${escapeXml(notifyParty.email)}</ram:Content>
+            </ram:IncludedAccountingNote>`);
+    }
+    
+    // Línea 4: Ciudad, Estado (nombre completo), País (nombre completo)
+    if (address?.place || address?.state || address?.countryCode) {
+      const locationParts: string[] = [];
+      if (address?.place) locationParts.push(address.place);
+      if (address?.state) locationParts.push(getStateName(address.state));
+      if (address?.countryCode) locationParts.push(getCountryName(address.countryCode));
+      if (locationParts.length > 0) {
+        notes.push(`            <ram:IncludedAccountingNote>
+                <ram:ContentCode>GEN</ram:ContentCode>
+                <ram:Content>${escapeXml(locationParts.join(', '))}</ram:Content>
+            </ram:IncludedAccountingNote>`);
+      }
+    }
+  }
+  
+  // Accounting info: usa el de la house si existe, si no hereda del master
+  const accountingInfo = (house.accounting && house.accounting.length > 0) 
+    ? house.accounting 
+    : shipment.accounting;
+  
+  if (accountingInfo && accountingInfo.length > 0) {
+    accountingInfo.forEach(acc => {
+      if (acc.accountingInformation) {
+        notes.push(`            <ram:IncludedAccountingNote>
+                <ram:ContentCode>GEN</ram:ContentCode>
+                <ram:Content>${escapeXml(acc.accountingInformation)}</ram:Content>
+            </ram:IncludedAccountingNote>`);
+      }
+    });
+  }
+  
+  return notes.length > 0 ? '\n' + notes.join('\n') : '';
 }
 
 function getUniqueHtsCodes(shipment: InternalShipment): string[] {

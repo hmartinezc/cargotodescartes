@@ -37,6 +37,8 @@ export type FwbSegmentType =
   | 'RTD'   // Rate Description
   | 'NG'    // Nature of Goods
   | 'NH'    // Harmonized Code
+  | 'NV'    // Volume (Cubic Meters)
+  | 'NS'    // SLAC (Pieces)
   | 'OTH'   // Other Charges
   | 'PPD'   // Prepaid Charges
   | 'COL'   // Collect Charges
@@ -352,6 +354,30 @@ export const FWB_SEGMENTS: Record<FwbSegmentType, SegmentInfo> = {
       { name: 'codes', description: 'Códigos HTS separados (múltiples)', maxLength: 15, required: false, type: 'string' }
     ]
   },
+  NV: {
+    code: 'NV',
+    name: 'Volume',
+    description: 'Volumen total en metros cúbicos (suma de houses)',
+    required: false,
+    maxLength: 20,
+    order: 14,
+    versions: ['FWB/16', 'FWB/17'],
+    fields: [
+      { name: 'volume', description: 'Volumen en M3 con prefijo MC', maxLength: 15, required: false, type: 'number' }
+    ]
+  },
+  NS: {
+    code: 'NS',
+    name: 'SLAC',
+    description: 'Shipper Load and Count (piezas del master)',
+    required: false,
+    maxLength: 15,
+    order: 15,
+    versions: ['FWB/16', 'FWB/17'],
+    fields: [
+      { name: 'pieces', description: 'Número de piezas', maxLength: 10, required: false, type: 'number' }
+    ]
+  },
   OTH: {
     code: 'OTH',
     name: 'Other Charges',
@@ -539,13 +565,25 @@ export const FHL_SEGMENTS: Record<FhlSegmentType, SegmentInfo> = {
       { name: 'natureOfGoods', description: 'Descripción (máx 11 chars)', maxLength: 11, required: true, type: 'string' }
     ]
   },
+  TXT: {
+    code: 'TXT',
+    name: 'Free Text (Nature of Goods)',
+    description: 'Texto libre - Descripción completa de la mercancía (natureOfGoods)',
+    required: false,
+    maxLength: 100,
+    order: 4,
+    versions: ['FHL/4'],
+    fields: [
+      { name: 'text', description: 'Descripción completa de mercancía', maxLength: 70, required: false, type: 'string' }
+    ]
+  },
   HTS: {
     code: 'HTS',
     name: 'Harmonized Tariff Schedule',
     description: 'Código arancelario para la house',
     required: false,
     maxLength: 20,
-    order: 4,
+    order: 5,
     versions: ['FHL/4'],
     fields: [
       { name: 'code', description: 'Código HTS', maxLength: 15, required: false, type: 'string' }
@@ -557,7 +595,7 @@ export const FHL_SEGMENTS: Record<FhlSegmentType, SegmentInfo> = {
     description: 'Información aduanera para la house',
     required: false,
     maxLength: 100,
-    order: 5,
+    order: 6,
     versions: ['FHL/2', 'FHL/4'],
     fields: [
       { name: 'countryCode', description: 'País (2 chars)', maxLength: 2, required: true, type: 'code' },
@@ -572,7 +610,7 @@ export const FHL_SEGMENTS: Record<FhlSegmentType, SegmentInfo> = {
     description: 'Exportador de la guía hija',
     required: true,
     maxLength: 150,
-    order: 6,
+    order: 7,
     versions: ['FHL/2', 'FHL/4'],
     fields: [
       { name: 'name', description: 'Nombre (máx 35 chars)', maxLength: 35, required: true, type: 'string' },
@@ -588,7 +626,7 @@ export const FHL_SEGMENTS: Record<FhlSegmentType, SegmentInfo> = {
     description: 'Importador de la guía hija',
     required: true,
     maxLength: 150,
-    order: 7,
+    order: 8,
     versions: ['FHL/2', 'FHL/4'],
     fields: [
       { name: 'name', description: 'Nombre (máx 35 chars)', maxLength: 35, required: true, type: 'string' },
@@ -605,7 +643,7 @@ export const FHL_SEGMENTS: Record<FhlSegmentType, SegmentInfo> = {
     description: 'Declaraciones de cargos para la house',
     required: true,
     maxLength: 50,
-    order: 8,
+    order: 9,
     versions: ['FHL/2', 'FHL/4'],
     fields: [
       { name: 'currency', description: 'Moneda', maxLength: 3, required: true, type: 'code' },
@@ -613,18 +651,6 @@ export const FHL_SEGMENTS: Record<FhlSegmentType, SegmentInfo> = {
       { name: 'declaredCarriage', description: 'NVD', maxLength: 10, required: true, type: 'string' },
       { name: 'declaredCustoms', description: 'NCV', maxLength: 10, required: true, type: 'string' },
       { name: 'declaredInsurance', description: 'XXX', maxLength: 10, required: true, type: 'string' }
-    ]
-  },
-  TXT: {
-    code: 'TXT',
-    name: 'Free Text',
-    description: 'Texto libre adicional',
-    required: false,
-    maxLength: 100,
-    order: 9,
-    versions: ['FHL/4'],
-    fields: [
-      { name: 'text', description: 'Texto libre', maxLength: 70, required: false, type: 'string' }
     ]
   },
   FTR: {
@@ -779,7 +805,7 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     policy: 20, // case 2, option 0
     fwbVersion: 'FWB/16',
     fhlVersion: 'FHL/4',
-    enabledSegments: ['FWB', 'AWB', 'RTG', 'SHP', 'CNE', 'AGT', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+    enabledSegments: ['FWB', 'AWB', 'RTG', 'SHP', 'CNE', 'AGT', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
     disabledSegments: ['FLT', 'SSR', 'ACC', 'OTH', 'CER', 'NFY'],
     defaultSphCodes: ['ECC', 'EAP', 'PER'],
     ociFormat: 'withPrefix',
@@ -791,7 +817,7 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     policy: 21, // case 2, option 1
     fwbVersion: 'FWB/16',
     fhlVersion: 'FHL/4',
-    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
     disabledSegments: ['OTH', 'NFY'],
     defaultSphCodes: ['EAP'],
     ociFormat: 'withPrefix',
@@ -803,7 +829,7 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     policy: 24, // case 2, option 4
     fwbVersion: 'FWB/16',
     fhlVersion: 'FHL/4',
-    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'OTH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'OTH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
     disabledSegments: ['NFY'],
     defaultSphCodes: ['EAP'],
     ociFormat: 'withPrefix',
@@ -816,7 +842,7 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     policy: 23, // case 2, option 3
     fwbVersion: 'FWB/16',
     fhlVersion: 'FHL/4',
-    enabledSegments: ['FWB', 'AWB', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'OTH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+    enabledSegments: ['FWB', 'AWB', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'OTH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
     disabledSegments: ['FLT', 'NFY'],
     defaultSphCodes: ['EAP'],
     ociFormat: 'withPrefix',
@@ -831,7 +857,7 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     // Según legacy Reservas.cs:3048-3056, orden para option=2:
     // AWB + FLT + RTG + SHP + CNE + AGT + SSR + ACC + CVD + RTD + NG + NH + PPD + COL + CER + ISU + REF + SPH + OCI (sin OTH)
     // FWB se incluye pero solo genera la línea de versión (FWB/16) sin UNB/UNH (Reservas.cs:1447-1470)
-    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI'],
+    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI'],
     disabledSegments: ['FTR', 'OTH', 'NFY'], // Sin UNB/UNH/UNT/UNZ ni OTH, pero SÍ incluye línea FWB/16
     defaultSphCodes: ['EAP'],
     ociFormat: 'withPrefix',
@@ -844,7 +870,7 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     policy: 41, // case 4, option 1
     fwbVersion: 'FWB/16',
     fhlVersion: 'FHL/4',
-    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'OTH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'OTH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
     disabledSegments: ['NFY'],
     defaultSphCodes: ['EAP'],
     ociFormat: 'withPrefix',
@@ -858,7 +884,7 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     policy: 41, // case 4, option 1
     fwbVersion: 'FWB/16',
     fhlVersion: 'FHL/4',
-    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'OTH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'OTH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
     disabledSegments: ['NFY'],
     defaultSphCodes: ['EAP'],
     ociFormat: 'withPrefix',
@@ -872,7 +898,7 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     policy: 71, // case 7, option 1 - DHL style
     fwbVersion: 'FWB/16',
     fhlVersion: 'FHL/4',
-    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'NFY', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'NFY', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
     disabledSegments: ['OTH'],
     defaultSphCodes: ['EAP'],
     ociFormat: 'withPrefix',
@@ -886,7 +912,7 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     policy: 71, // case 7
     fwbVersion: 'FWB/16',
     fhlVersion: 'FHL/4',
-    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'NFY', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'NFY', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
     disabledSegments: ['OTH'],
     defaultSphCodes: ['EAP'],
     ociFormat: 'withPrefix',
@@ -900,7 +926,7 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     policy: 21, // case 2, option 1
     fwbVersion: 'FWB/16',
     fhlVersion: 'FHL/4',
-    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
     disabledSegments: ['OTH', 'NFY'],
     defaultSphCodes: ['EAP'],
     ociFormat: 'withPrefix',
@@ -914,7 +940,7 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     policy: 21, // case 2, option 1
     fwbVersion: 'FWB/16',
     fhlVersion: 'FHL/4',
-    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
     disabledSegments: ['OTH', 'NFY'],
     defaultSphCodes: ['EAP'],
     ociFormat: 'withPrefix',
@@ -928,7 +954,7 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     policy: 71, // case 7, option 1
     fwbVersion: 'FWB/16',
     fhlVersion: 'FHL/4',
-    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'NFY', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'NFY', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
     disabledSegments: ['OTH'],
     defaultSphCodes: ['EAP'],
     ociFormat: 'withPrefix',
@@ -943,7 +969,7 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     policy: 21, // case 2, option 1
     fwbVersion: 'FWB/16',
     fhlVersion: 'FHL/4',
-    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
     disabledSegments: ['OTH', 'NFY'],
     defaultSphCodes: ['EAP'],
     ociFormat: 'withPrefix', // UE requiere EORI
@@ -956,7 +982,7 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     policy: 21, // case 2, option 1
     fwbVersion: 'FWB/16',
     fhlVersion: 'FHL/4',
-    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
     disabledSegments: ['OTH', 'NFY'],
     defaultSphCodes: ['EAP'],
     ociFormat: 'withPrefix', // UE requiere EORI
@@ -969,7 +995,7 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     policy: 21, // case 2, option 1
     fwbVersion: 'FWB/16',
     fhlVersion: 'FHL/4',
-    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
     disabledSegments: ['OTH', 'NFY'],
     defaultSphCodes: ['EAP'],
     ociFormat: 'withPrefix',
@@ -982,7 +1008,7 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     policy: 21, // case 2, option 1
     fwbVersion: 'FWB/16',
     fhlVersion: 'FHL/4',
-    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
     disabledSegments: ['OTH', 'NFY'],
     defaultSphCodes: ['EAP'],
     ociFormat: 'withPrefix',

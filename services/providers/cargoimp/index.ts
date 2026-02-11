@@ -21,3 +21,11 @@ export {
 } from './cargoImpService';
 
 export * from './cargoImpTypes';
+
+export { 
+  validateCargoImpMessage,
+  type FwbValidationResult,
+  type SegmentValidationResult,
+  type ValidationIssue,
+  type ValidationSeverity
+} from './cargoImpValidator';
