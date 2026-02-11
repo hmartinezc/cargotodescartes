@@ -123,8 +123,11 @@ const AWB_WITH_DASH = /^[0-9]{3}-[0-9]{8}$/;
 /** Fecha DDMMMYY */
 const DATE_DDMMMYY = /^[0-3][0-9](JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[0-9]{2}$/;
 
-/** Fecha DDM (día + mes abreviado para FLT) */
-const FLT_DATE = /^[0-3]?[0-9]$/;
+/** Fecha DDM (día del mes para FLT): spec n[2] = exactamente 2 dígitos */
+const FLT_DATE = /^[0-3][0-9]$/;
+
+/** Día de vuelo permisivo (1 o 2 dígitos — generará warning si es 1) */
+const FLT_DATE_LOOSE = /^[0-3]?[0-9]$/;
 
 /** Número de vuelo: 2-3 letras carrier + 1-5 dígitos (o N+letra) */
 const FLIGHT_NUMBER = /^[A-Z0-9]{2}[0-9]{1,5}[A-Z]?$/;
@@ -691,20 +694,33 @@ function validateFltSegment(lines: string[], issues: ValidationIssue[], segment:
             });
           }
 
-          // Validar día si existe
+          // Validar día si existe — spec: n[2] = exactamente 2 dígitos
           if (flightPieces.length >= 2) {
             const day = flightPieces[1];
-            if (!FLT_DATE.test(day)) {
+            if (!FLT_DATE_LOOSE.test(day)) {
               issues.push({
                 severity: 'error',
                 segment: 'FLT',
                 field: 'flightDate',
                 message: `Día de vuelo "${day}" no es válido. Debe ser 2 dígitos (01-31)`,
-                rule: 'FLT [19A]: Día 2[n] (día del mes)',
+                rule: 'FLT [19A]: Día n[2] (día del mes)',
                 expected: '01-31',
                 found: day
               });
             } else {
+              // Warn si es 1 dígito — spec exige n[2]
+              if (day.length === 1) {
+                issues.push({
+                  severity: 'warning',
+                  segment: 'FLT',
+                  field: 'flightDate',
+                  message: `Día de vuelo "${day}" tiene 1 dígito. Spec IATA exige n[2] (2 dígitos). Usar "0${day}" para cumplir spec.`,
+                  rule: 'FLT [19A]: Día n[2] — usar cero-fill',
+                  found: day,
+                  expected: `0${day}`,
+                  suggestion: `Cambiar ${day} por 0${day}`
+                });
+              }
               const dayNum = parseInt(day);
               if (dayNum < 1 || dayNum > 31) {
                 issues.push({
@@ -928,8 +944,9 @@ function validatePartySegment(
       severity: 'error',
       segment: segCode,
       field: 'address',
-      message: `Dirección del ${label} es OBLIGATORIA y está vacía`,
-      rule: `${segCode} [2/4]: Dirección hasta 35[t]`
+      message: `Dirección del ${label} es OBLIGATORIA y está vacía. Si no se conoce, usar SN (Sin Número).`,
+      rule: `${segCode} [2/4]: Dirección hasta 35[t]`,
+      suggestion: 'Si no se tiene dirección completa, usar /SN (Sin Número)'
     });
   } else {
     const addressValue = addressLine.replace(/^\//, '').trim();
@@ -942,6 +959,17 @@ function validatePartySegment(
         rule: `${segCode} [2/4]: Dirección hasta 35[t]`,
         found: addressValue.substring(0, 40) + '...',
         suggestion: 'Truncar la dirección a 35 caracteres'
+      });
+    }
+    // Hint: Si dirección no tiene número, usar SN
+    if (addressValue && !/\d/.test(addressValue)) {
+      issues.push({
+        severity: 'info',
+        segment: segCode,
+        field: 'address',
+        message: `Dirección del ${label} no contiene número. Si falta el número de calle, agregar SN (Sin Número) según IATA.`,
+        rule: `${segCode}: Si falta número de calle, usar SN`,
+        suggestion: 'Agregar SN al final de la dirección si no tiene número'
       });
     }
   }
@@ -1208,7 +1236,7 @@ function validateAgtSegment(lines: string[], issues: ValidationIssue[], segment:
     }
   }
 
-  // Validar ciudad del agente
+  // Validar ciudad del agente (max 17 chars según spec)
   if (agtLines.length < 3) {
     issues.push({
       severity: 'warning',
@@ -1217,6 +1245,18 @@ function validateAgtSegment(lines: string[], issues: ValidationIssue[], segment:
       message: 'Falta ciudad del agente (línea 3 del segmento AGT)',
       rule: 'AGT: Ciudad hasta 17[t]'
     });
+  } else {
+    const city = agtLines[2].replace(/^\//, '').trim();
+    if (city.length > 17) {
+      issues.push({
+        severity: 'error',
+        segment: 'AGT',
+        field: 'city',
+        message: `Ciudad del agente excede 17 caracteres (tiene ${city.length})`,
+        rule: 'AGT: Ciudad hasta a[1-17]',
+        found: city.substring(0, 20) + '...'
+      });
+    }
   }
 }
 
@@ -1373,6 +1413,32 @@ function validateCvdSegment(
         });
       }
     }
+  }
+
+  // Validar campo de seguro (5to campo: XXX normalmente)
+  if (parts.length >= 6) {
+    const insurance = parts[5]?.trim();
+    if (insurance && insurance !== 'XXX' && insurance.length > 3) {
+      issues.push({
+        severity: 'warning',
+        segment: 'CVD',
+        field: 'insurance',
+        message: `Valor de seguro "${insurance}" excede 3 caracteres. Normalmente se usa XXX (sin seguro declarado)`,
+        rule: 'CVD: Seguro a[3] — normalmente XXX',
+        found: insurance,
+        suggestion: 'Usar XXX si no se declara seguro'
+      });
+    }
+  } else if (parts.length >= 5) {
+    // Solo tiene 5 partes (currency, empty, wtot, carriage, customs) — falta insurance
+    issues.push({
+      severity: 'info',
+      segment: 'CVD',
+      field: 'insurance',
+      message: 'Falta campo de seguro (6to campo). Normalmente se coloca XXX (sin valor declarado para seguro).',
+      rule: 'CVD: Formato completo CVD/USD//PP/NVD/NCV/XXX',
+      suggestion: 'Agregar /XXX al final del CVD'
+    });
   }
 
   // Info: Destinos especiales que requieren valor numérico
@@ -1808,21 +1874,79 @@ function validateChargeSummarySegment(
     });
   }
 
-  // Validar que los montos sean numéricos
-  const amounts = content.replace(`${segCode}/`, '').split('/');
-  amounts.forEach((amt, idx) => {
-    const trimmed = amt.trim();
-    if (trimmed && !WEIGHT_PATTERN.test(trimmed) && trimmed !== '0') {
-      issues.push({
-        severity: 'warning',
-        segment: segCode,
-        field: `amount${idx + 1}`,
-        message: `Monto "${trimmed}" no es numérico`,
-        rule: `${segCode}: Montos hasta 15[m] numéricos`,
-        found: trimmed
-      });
-    }
-  });
+  // Validar presencia de identificadores obligatorios: WT, OC, CT
+  // Spec: PPD o COL debe llevar WT n[1-12], OC n[1-12], CT n[1-12]
+  const rawContent = content.replace(`${segCode}/`, '');
+  
+  const hasWT = /WT[\d.]/.test(rawContent);
+  const hasOC = /OC[\d.]/.test(rawContent);
+  const hasCT = /CT[\d.]/.test(rawContent);
+
+  if (!hasWT) {
+    issues.push({
+      severity: 'error',
+      segment: segCode,
+      field: 'WT',
+      message: `Falta identificador WT (Weight Charge) en ${segCode}. Spec: WT n[1-12]`,
+      rule: `${segCode}: WT (peso) obligatorio`,
+      suggestion: `Agregar WT seguido del monto. Ej: ${segCode}/WT3194.24/OC778.00/CT3972.24`
+    });
+  }
+  if (!hasOC) {
+    issues.push({
+      severity: 'warning',
+      segment: segCode,
+      field: 'OC',
+      message: `Falta identificador OC (Other Charges) en ${segCode}. Si no hay cargos adicionales, usar OC0`,
+      rule: `${segCode}: OC (otros cargos) recomendado`,
+      suggestion: `Agregar OC0 si no hay cargos adicionales de aerolínea`
+    });
+  }
+  if (!hasCT) {
+    issues.push({
+      severity: 'error',
+      segment: segCode,
+      field: 'CT',
+      message: `Falta identificador CT (Cargo Total) en ${segCode}. Spec: CT n[1-12]`,
+      rule: `${segCode}: CT (total) obligatorio`,
+      suggestion: `Agregar CT seguido del total. Ej: CT3972.24`
+    });
+  }
+
+  // Validar que los montos con identificadores sean numéricos
+  const wtMatch = rawContent.match(/WT([\d.]+)/);
+  if (wtMatch && !WEIGHT_PATTERN.test(wtMatch[1])) {
+    issues.push({
+      severity: 'error',
+      segment: segCode,
+      field: 'WT',
+      message: `Monto WT "${wtMatch[1]}" no es numérico válido`,
+      rule: `${segCode}: WT n[1-12]`,
+      found: wtMatch[1]
+    });
+  }
+  const ocMatch = rawContent.match(/OC([\d.]+)/);
+  if (ocMatch && !WEIGHT_PATTERN.test(ocMatch[1])) {
+    issues.push({
+      severity: 'warning',
+      segment: segCode,
+      field: 'OC',
+      message: `Monto OC "${ocMatch[1]}" no es numérico válido`,
+      rule: `${segCode}: OC n[1-12]`,
+      found: ocMatch[1]
+    });
+  }
+  const ctMatch = rawContent.match(/CT([\d.]+)/);
+  if (ctMatch && !WEIGHT_PATTERN.test(ctMatch[1])) {
+    issues.push({
+      severity: 'error',
+      segment: segCode,
+      field: 'CT',
+      message: `Monto CT "${ctMatch[1]}" no es numérico válido`,
+      rule: `${segCode}: CT n[1-12]`,
+      found: ctMatch[1]
+    });
+  }
 }
 
 /**
@@ -2289,7 +2413,8 @@ function validateFhlSegment(
 
 /**
  * MBI: Master Bill Information (FHL)
- * Formato: MBI/n[3]-n[8]a[3]a[3]/an[1]n[1-4]
+ * Formato: MBI/n[3]-n[8]a[3]a[3]/an[1]n[1-4]a[1]n[1-7]
+ * Incluye: Prefijo-Serial + Origen+Destino / Piezas + Peso
  */
 function validateMbiSegment(lines: string[], issues: ValidationIssue[], segment: GeneratedSegment): void {
   const content = segment.content;
@@ -2304,9 +2429,11 @@ function validateMbiSegment(lines: string[], issues: ValidationIssue[], segment:
     return;
   }
 
-  // Validar formato AWB en MBI: n[3]-n[8]a[3]a[3]/an[1]n[1-4]
-  const mbiMatch = content.match(/(\d{3})-(\d{8})([A-Z]{3})([A-Z]{3})\/T(\d{1,4})/);
-  if (!mbiMatch) {
+  // Validar formato AWB en MBI: n[3]-n[8]a[3]a[3]/an[1]n[1-4]a[1]n[1-7]
+  // Incluye peso: T{piezas}K{peso} o T{piezas}L{peso}
+  const mbiMatch = content.match(/(\d{3})-(\d{8})([A-Z]{3})([A-Z]{3})\/T(\d{1,4})([KL])([\d.]+)?/);
+  const mbiMatchNoPeso = !mbiMatch ? content.match(/(\d{3})-(\d{8})([A-Z]{3})([A-Z]{3})\/T(\d{1,4})/) : null;
+  if (!mbiMatch && !mbiMatchNoPeso) {
     // Intentar al menos el AWB
     const awbMatch = content.match(/(\d{3})-(\d{8})/);
     if (!awbMatch) {
@@ -2361,9 +2488,9 @@ function validateMbiSegment(lines: string[], issues: ValidationIssue[], segment:
         });
       }
     }
-  } else {
-    // Match completo — validar Mod-7
-    const serial = mbiMatch[2];
+  } else if (mbiMatchNoPeso) {
+    // Tiene AWB + origen/dest + piezas pero NO peso
+    const serial = mbiMatchNoPeso[2];
     const serialBase = serial.substring(0, 7);
     const checkDigit = parseInt(serial[7]);
     const expectedCheck = parseInt(serialBase) % 7;
@@ -2377,6 +2504,46 @@ function validateMbiSegment(lines: string[], issues: ValidationIssue[], segment:
         expected: `${serialBase}${expectedCheck}`,
         found: serial
       });
+    }
+    // Falta peso — spec dice a[1]n[1-7]
+    issues.push({
+      severity: 'warning',
+      segment: 'MBI',
+      field: 'weight',
+      message: 'Falta indicador de peso K{n} o L{n} después de las piezas en MBI. Spec: a[1]n[1-7]',
+      rule: 'MBI: Peso obligatorio (K=kilos, L=libras)',
+      suggestion: 'Formato completo: MBI/992-56984125BOGMIA/T10K1500.0'
+    });
+  } else {
+    // Match completo con peso — validar Mod-7
+    const serial = mbiMatch![2];
+    const serialBase = serial.substring(0, 7);
+    const checkDigit = parseInt(serial[7]);
+    const expectedCheck = parseInt(serialBase) % 7;
+    if (checkDigit !== expectedCheck) {
+      issues.push({
+        severity: 'error',
+        segment: 'MBI',
+        field: 'awbCheckDigit',
+        message: `Dígito de control Mod-7 inválido. Serial "${serial}" → mod 7 = ${expectedCheck}, check es ${checkDigit}`,
+        rule: 'MBI: Mod-7 check digit',
+        expected: `${serialBase}${expectedCheck}`,
+        found: serial
+      });
+    }
+    // Validar peso
+    const weightVal = mbiMatch![7];
+    if (weightVal) {
+      if (!WEIGHT_PATTERN.test(weightVal) || parseFloat(weightVal) <= 0) {
+        issues.push({
+          severity: 'error',
+          segment: 'MBI',
+          field: 'weight',
+          message: `Peso MBI "${weightVal}" inválido (debe ser número > 0)`,
+          rule: 'MBI: Peso n[1-7] con decimales',
+          found: weightVal
+        });
+      }
     }
   }
 }
@@ -2507,11 +2674,41 @@ function validateHbsSegment(lines: string[], issues: ValidationIssue[], segment:
     });
   }
 
+  // SLAC (n[1-4]) — Shipper's Load and Count
+  // Buscar una parte numérica que no sea piezas ni peso ni HAWB
+  const slacPart = hbsParts.find(p => 
+    p && 
+    NUMERIC_ONLY.test(p) && 
+    !/^[PT]/.test(p) && // No es piezas (P/T prefix)
+    hbsParts.indexOf(p) > 2 // Después de HAWB, ruta, y piezas
+  );
+  if (slacPart) {
+    if (slacPart.length > 4) {
+      issues.push({
+        severity: 'warning',
+        segment: 'HBS',
+        field: 'slac',
+        message: `SLAC "${slacPart}" excede 4 dígitos (máximo n[1-4])`,
+        rule: 'HBS: SLAC hasta 4 dígitos numéricos',
+        found: slacPart
+      });
+    }
+  } else {
+    issues.push({
+      severity: 'info',
+      segment: 'HBS',
+      field: 'slac',
+      message: 'No se detectó SLAC (Shipper Load And Count) en HBS. Aduanas puede requerirlo (n[1-4]).',
+      rule: 'HBS: SLAC recomendado (n[1-4])',
+      suggestion: 'Agregar cantidad SLAC después del peso en la línea HBS'
+    });
+  }
+
   // Descripción de mercancía (a[1-15]) — spec: campo obligatorio para aduanas
-  // Buscar la parte que no sea código HBS, ruta, piezas ni peso
+  // Buscar la parte que no sea código HBS, ruta, piezas, peso ni SLAC
   const descPart = hbsParts.find(p => 
     p && 
-    !/^\d/.test(p) && // No empieza con números (no es HBS ID numérico)
+    !/^\d/.test(p) && // No empieza con números (no es HBS ID numérico ni SLAC)
     !/^[A-Z]{3}[A-Z]{3}$/.test(p) && // No es ruta (ORGDST 6 letras)
     !/^[A-Z]{6}$/.test(p) && // No es ruta alternativa
     !/^[PT]\d/.test(p) && // No es piezas
