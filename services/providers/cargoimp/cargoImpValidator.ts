@@ -865,13 +865,26 @@ function validatePartySegment(
   }
 
   // Separar líneas (después del tag)
-  const dataLines = content.split('\n').slice(1); // Saltar primera línea (tag)
+  // FWB genera: SHP\n/{nombre}\n/{dir}\n/{city}\n/{CC}/{postal}
+  // FHL genera: SHP/{nombre}\n/{dir}\n/{city}\n/{CC}/{postal}
+  // Detectar si el nombre está en la misma línea que el tag
+  const rawLines = content.split('\n');
+  const firstLine = rawLines[0];
+  let dataLines: string[];
   
-  // Buscar campos según posición en FWB/16:
-  // Línea 1 (después del tag): /NAM/nombre o /nombre
-  // Línea 2: /dirección  
-  // Línea 3: /ciudad o /ciudad/estado
-  // Línea 4: /CC/codigopostal[/TE/telefono]
+  if (firstLine === segCode || firstLine.match(new RegExp(`^${segCode}$`))) {
+    // FWB style: tag solo en la primera línea → datos desde línea 1
+    dataLines = rawLines.slice(1);
+  } else if (firstLine.startsWith(segCode + '/') || firstLine.startsWith(segCode + '\n')) {
+    // FHL style: tag + nombre en la misma línea (SHP/{nombre})
+    // Extraer nombre de la primera línea y reconstruir dataLines
+    const nameFromTag = firstLine.substring(segCode.length); // /{nombre}
+    dataLines = [nameFromTag, ...rawLines.slice(1)];
+  } else {
+    // FWB/17 style con NAM/: SHP\nNAM/{nombre}... 
+    // ya se maneja con slice(1)
+    dataLines = rawLines.slice(1);
+  }
 
   // Validar nombre (hasta 35 chars)
   const nameLine = dataLines[0];
