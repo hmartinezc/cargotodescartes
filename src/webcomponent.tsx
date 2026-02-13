@@ -35,7 +35,9 @@ import { useState, useCallback, useEffect } from 'preact/hooks';
 import { render } from 'preact';
 import { InternalShipment, ShipmentStatus, TransmissionLog, loadConnectorConfig, saveConnectorConfig, ConnectorConfig, DEFAULT_CONNECTOR_CONFIG } from '../types';
 import { ChampModal, CargoImpResult } from '../components/ChampModal';
+import { FullScreenAwbView, FullScreenViewMode } from '../components/FullScreenAwbView';
 import { mockShipments } from '../mockData';
+import { getDefaultSphCodes, getAwbPrefix } from '../services/champService';
 import { Plane, Package, MapPin, Building, User, Scale, Layers, Send, ChevronRight, X } from 'lucide-preact';
 import tailwindStyles from './index.css?inline';
 
@@ -56,6 +58,8 @@ export interface CopyResult {
 export interface ShipmentInputData extends Partial<InternalShipment> {
   // Callback opcional para recibir el resultado cuando se copia EDI
   onCopyResult?: (result: CopyResult) => void;
+  /** Rol del usuario: 'ADM' = admin (ve Editor Completo y todos los tabs), otros = limitado */
+  userRole?: string;
 }
 
 // ============================================================
@@ -271,6 +275,14 @@ header.flex-shrink-0 {
 .from-purple-400 { --tw-gradient-from: #c084fc !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(192, 132, 252, 0)) !important; }
 .to-purple-600 { --tw-gradient-to: #9333ea !important; }
 
+/* CRÍTICO: Gradientes para header del modal de pre-transmisión */
+.from-emerald-500 { --tw-gradient-from: #10b981 !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(16, 185, 129, 0)) !important; }
+.to-green-500 { --tw-gradient-to: #22c55e !important; }
+.from-red-500 { --tw-gradient-from: #ef4444 !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(239, 68, 68, 0)) !important; }
+.to-orange-500 { --tw-gradient-to: #f97316 !important; }
+.from-amber-400 { --tw-gradient-from: #fbbf24 !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(251, 191, 36, 0)) !important; }
+.to-orange-400 { --tw-gradient-to: #fb923c !important; }
+
 /* Backdrop blur */
 .backdrop-blur-sm { backdrop-filter: blur(4px) !important; -webkit-backdrop-filter: blur(4px) !important; }
 
@@ -353,6 +365,635 @@ header.flex-shrink-0 {
 /* Width/Height */
 .w-full { width: 100% !important; }
 .h-16 { height: 4rem !important; }
+
+/* ===================================================== */
+/* CRÍTICO: Estilos para SummaryCards y Pre-Transmit    */
+/* Agregados para garantizar consistencia dev/prod       */
+/* ===================================================== */
+
+/* SummaryCard - Púrpura uniforme con opacidad */
+.bg-purple-50\\/60 { background-color: rgba(250, 245, 255, 0.6) !important; }
+.border-purple-200\\/70 { border-color: rgba(233, 213, 255, 0.7) !important; }
+.text-purple-400 { color: #c084fc !important; }
+.text-purple-500 { color: #a855f7 !important; }
+.text-purple-800 { color: #6b21a8 !important; }
+.text-purple-900 { color: #581c87 !important; }
+.border-purple-200 { border-color: #e9d5ff !important; }
+
+/* Pre-transmit modal - z-index alto */
+.z-\\[99999\\] { z-index: 99999 !important; }
+
+/* Scroll container para houses */
+.max-h-\\[40vh\\] { max-height: 40vh !important; }
+
+/* Colores de validación */
+.bg-red-50 { background-color: #fef2f2 !important; }
+.bg-amber-50 { background-color: #fffbeb !important; }
+.bg-green-50 { background-color: #f0fdf4 !important; }
+.text-red-600 { color: #dc2626 !important; }
+.text-amber-600 { color: #d97706 !important; }
+.text-green-600 { color: #16a34a !important; }
+.text-red-800 { color: #991b1b !important; }
+.text-amber-800 { color: #92400e !important; }
+.text-green-800 { color: #166534 !important; }
+
+/* Details/Summary collapsible - group-open:rotate-90 */
+.group\\/house { /* marker for group */ }
+details.group > summary .group-open\\:rotate-90,
+.group[open] .group-open\\:rotate-90 { rotate: 90deg !important; }
+.group\\/house[open] .group-open\\/house\\:rotate-90 { rotate: 90deg !important; }
+
+/* Hide default summary marker/triangle */
+summary.list-none::-webkit-details-marker { display: none !important; }
+summary.list-none::marker { display: none !important; content: "" !important; }
+.list-none { list-style-type: none !important; }
+
+/* Hover brightness para summary */
+.hover\\:brightness-95:hover { filter: brightness(0.95) !important; }
+
+/* User select none */
+.select-none { 
+  -webkit-user-select: none !important; 
+  user-select: none !important; 
+}
+
+/* Responsive grids para SummaryCards */
+@media (min-width: 768px) {
+  .md\\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+  .md\\:grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+}
+@media (min-width: 1024px) {
+  .lg\\:grid-cols-6 { grid-template-columns: repeat(6, minmax(0, 1fr)) !important; }
+}
+
+/* Backdrop blur para overlay */
+.backdrop-blur-sm { 
+  backdrop-filter: blur(4px) !important; 
+  -webkit-backdrop-filter: blur(4px) !important; 
+}
+
+/* Black overlay con opacidad */
+.bg-black\\/50 { background-color: rgba(0, 0, 0, 0.5) !important; }
+
+/* Rounded 2xl para modal */
+.rounded-2xl { border-radius: 1rem !important; }
+
+/* Max widths para modal */
+.max-w-2xl { max-width: 42rem !important; }
+.max-w-lg { max-width: 32rem !important; }
+
+/* Shadow 2xl para modal */
+.shadow-2xl { 
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25) !important; 
+}
+
+/* Space-y para vertical spacing */
+.space-y-2 > * + * { margin-top: 0.5rem !important; }
+.space-y-3 > * + * { margin-top: 0.75rem !important; }
+.space-y-4 > * + * { margin-top: 1rem !important; }
+
+/* Transition-transform para íconos */
+.transition-transform { 
+  transition-property: transform, rotate !important;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1) !important;
+  transition-duration: 150ms !important;
+}
+
+/* Transition-all para animaciones */
+.transition-all {
+  transition-property: all !important;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1) !important;
+  transition-duration: 150ms !important;
+}
+
+/* Cursor pointer */
+.cursor-pointer { cursor: pointer !important; }
+
+/* Border-t para separadores */
+.border-t { 
+  border-top-width: 1px !important; 
+  border-top-style: solid !important; 
+}
+.border-slate-100 { border-color: #f1f5f9 !important; }
+
+/* Flex gap */
+.gap-1 { gap: 0.25rem !important; }
+.gap-1\\.5 { gap: 0.375rem !important; }
+.gap-2 { gap: 0.5rem !important; }
+
+/* Font mono para HAWB numbers */
+.font-mono { 
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace !important; 
+}
+
+/* ===================================================== */
+/* FALLBACKS PARA FullScreenAwbView — Resumen/Detalle,  */
+/* Blocking Errors Modal y SendMode Selector             */
+/* Estas clases se usan en las tabs de validación,      */
+/* el modal de errores bloqueantes y el pie de página    */
+/* ===================================================== */
+
+/* Z-index arbitrarios para modales internos */
+.z-\\[70\\] { z-index: 70 !important; }
+.z-\\[80\\] { z-index: 80 !important; }
+
+/* Backgrounds con opacidad */
+.bg-black\\/40 { background-color: rgba(0, 0, 0, 0.4) !important; }
+.bg-red-100\\/50 { background-color: rgba(254, 226, 226, 0.5) !important; }
+.bg-white\\/60 { background-color: rgba(255, 255, 255, 0.6) !important; }
+.bg-white\\/70 { background-color: rgba(255, 255, 255, 0.7) !important; }
+
+/* Fondos sólidos */
+.bg-red-500 { background-color: #ef4444 !important; }
+.bg-red-600 { background-color: #dc2626 !important; }
+.bg-red-200 { background-color: #fecaca !important; }
+.bg-amber-200 { background-color: #fde68a !important; }
+.bg-amber-600 { background-color: #d97706 !important; }
+.bg-green-400\\/20 { background-color: rgba(74, 222, 128, 0.2) !important; }
+.bg-purple-100 { background-color: #f3e8ff !important; }
+
+/* Bordes con opacidad */
+.border-white\\/50 { border-color: rgba(255, 255, 255, 0.5) !important; }
+.border-white\\/60 { border-color: rgba(255, 255, 255, 0.6) !important; }
+.border-green-200 { border-color: #bbf7d0 !important; }
+.border-green-400\\/30 { border-color: rgba(74, 222, 128, 0.3) !important; }
+.border-red-100 { border-color: #fee2e2 !important; }
+.border-red-200 { border-color: #fecaca !important; }
+.border-amber-200 { border-color: #fde68a !important; }
+.border-purple-300 { border-color: #d8b4fe !important; }
+.border-slate-700 { border-color: #334155 !important; }
+
+/* Max height/width arbitrarios */
+.max-h-\\[120px\\] { max-height: 120px !important; }
+.max-h-\\[200px\\] { max-height: 200px !important; }
+.max-h-\\[500px\\] { max-height: 500px !important; }
+.max-h-\\[50vh\\] { max-height: 50vh !important; }
+.max-h-\\[92vh\\] { max-height: 92vh !important; }
+.max-w-xl { max-width: 36rem !important; }
+.max-w-4xl { max-width: 56rem !important; }
+
+/* Tamaños de texto arbitrarios */
+.text-\\[9px\\] { font-size: 9px !important; line-height: 1.2 !important; }
+.text-\\[10px\\] { font-size: 10px !important; line-height: 1.2 !important; }
+.text-\\[11px\\] { font-size: 11px !important; line-height: 1.3 !important; }
+
+/* Colores de texto con opacidad */
+.text-red-500\\/70 { color: rgba(239, 68, 68, 0.7) !important; }
+
+/* Colores de texto sólidos */
+.text-green-100 { color: #dcfce7 !important; }
+.text-green-300 { color: #86efac !important; }
+.text-green-400 { color: #4ade80 !important; }
+.text-green-500 { color: #22c55e !important; }
+.text-cyan-400 { color: #22d3ee !important; }
+.text-cyan-600 { color: #0891b2 !important; }
+.text-blue-500 { color: #3b82f6 !important; }
+.text-red-400 { color: #f87171 !important; }
+.text-red-800 { color: #991b1b !important; }
+.text-amber-500 { color: #f59e0b !important; }
+
+/* Space-y */
+.space-y-1 > * + * { margin-top: 0.25rem !important; }
+.space-y-1\\.5 > * + * { margin-top: 0.375rem !important; }
+
+/* Transforms y transiciones */
+.active\\:scale-95:active { transform: scale(0.95) !important; }
+.hover\\:scale-105:hover { transform: scale(1.05) !important; }
+.transition-colors { 
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke !important;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1) !important;
+  transition-duration: 150ms !important;
+}
+
+/* Hover backgrounds */
+.hover\\:bg-green-400\\/30:hover { background-color: rgba(74, 222, 128, 0.3) !important; }
+.hover\\:bg-amber-50:hover { background-color: #fffbeb !important; }
+.hover\\:bg-red-100:hover { background-color: #fee2e2 !important; }
+.hover\\:text-red-600:hover { color: #dc2626 !important; }
+.hover\\:bg-black\\/5:hover { background-color: rgba(0, 0, 0, 0.05) !important; }
+
+/* Focus ring */
+.focus\\:ring-2:focus { 
+  --tw-ring-offset-shadow: var(--tw-ring-inset, ) 0 0 0 var(--tw-ring-offset-width, 0px) var(--tw-ring-offset-color, #fff) !important;
+  --tw-ring-shadow: var(--tw-ring-inset, ) 0 0 0 calc(2px + var(--tw-ring-offset-width, 0px)) var(--tw-ring-color, #3b82f6) !important;
+  box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000) !important;
+}
+.focus\\:ring-purple-500:focus { --tw-ring-color: #a855f7 !important; }
+
+/* Animaciones */
+.animate-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite !important; }
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.animate-spin { animation: spin 1s linear infinite !important; }
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Tipografía y layout */
+.leading-relaxed { line-height: 1.625 !important; }
+.h-0\\.5 { height: 0.125rem !important; }
+.h-px { height: 1px !important; }
+.min-w-0 { min-width: 0 !important; }
+.items-start { align-items: flex-start !important; }
+.flex-wrap { flex-wrap: wrap !important; }
+.inline-flex { display: inline-flex !important; }
+.whitespace-pre-wrap { white-space: pre-wrap !important; }
+.truncate { overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+.outline-none { outline: 2px solid transparent !important; outline-offset: 2px !important; }
+.uppercase { text-transform: uppercase !important; }
+.opacity-70 { opacity: 0.7 !important; }
+.opacity-80 { opacity: 0.8 !important; }
+
+/* Spacing granular */
+.p-0\\.5 { padding: 0.125rem !important; }
+.p-1\\.5 { padding: 0.375rem !important; }
+.p-2\\.5 { padding: 0.625rem !important; }
+.p-5 { padding: 1.25rem !important; }
+.pb-0\\.5 { padding-bottom: 0.125rem !important; }
+.pb-2 { padding-bottom: 0.5rem !important; }
+.pb-2\\.5 { padding-bottom: 0.625rem !important; }
+.pb-3 { padding-bottom: 0.75rem !important; }
+.pt-1 { padding-top: 0.25rem !important; }
+.pt-1\\.5 { padding-top: 0.375rem !important; }
+.pt-2 { padding-top: 0.5rem !important; }
+.px-1 { padding-left: 0.25rem !important; padding-right: 0.25rem !important; }
+.px-1\\.5 { padding-left: 0.375rem !important; padding-right: 0.375rem !important; }
+.px-2\\.5 { padding-left: 0.625rem !important; padding-right: 0.625rem !important; }
+.px-5 { padding-left: 1.25rem !important; padding-right: 1.25rem !important; }
+.py-0\\.5 { padding-top: 0.125rem !important; padding-bottom: 0.125rem !important; }
+.py-1 { padding-top: 0.25rem !important; padding-bottom: 0.25rem !important; }
+.py-1\\.5 { padding-top: 0.375rem !important; padding-bottom: 0.375rem !important; }
+.py-2\\.5 { padding-top: 0.625rem !important; padding-bottom: 0.625rem !important; }
+
+/* Margins granulares */
+.mb-0\\.5 { margin-bottom: 0.125rem !important; }
+.mb-1 { margin-bottom: 0.25rem !important; }
+.mb-1\\.5 { margin-bottom: 0.375rem !important; }
+.mb-3 { margin-bottom: 0.75rem !important; }
+.ml-1 { margin-left: 0.25rem !important; }
+.ml-1\\.5 { margin-left: 0.375rem !important; }
+.mr-1 { margin-right: 0.25rem !important; }
+.mt-0\\.5 { margin-top: 0.125rem !important; }
+.mt-2 { margin-top: 0.5rem !important; }
+.mt-3 { margin-top: 0.75rem !important; }
+.mx-3 { margin-left: 0.75rem !important; margin-right: 0.75rem !important; }
+.mx-4 { margin-left: 1rem !important; margin-right: 1rem !important; }
+
+/* Translate para centrado absoluto */
+.-translate-x-1\\/2 { transform: translateX(-50%) !important; }
+.-translate-y-1\\/2 { transform: translateY(-50%) !important; }
+.left-1\\/2 { left: 50% !important; }
+.top-1\\/2 { top: 50% !important; }
+
+/* Hover utilities adicionales */
+.hover\\:underline:hover { text-decoration: underline !important; }
+.hover\\:text-slate-600:hover { color: #475569 !important; }
+.hover\\:text-slate-700:hover { color: #334155 !important; }
+.hover\\:bg-slate-100:hover { background-color: #f1f5f9 !important; }
+.hover\\:bg-slate-200:hover { background-color: #e2e8f0 !important; }
+.hover\\:bg-slate-50:hover { background-color: #f8fafc !important; }
+.hover\\:bg-purple-50:hover { background-color: #faf5ff !important; }
+.hover\\:bg-purple-700:hover { background-color: #7c3aed !important; }
+.hover\\:bg-slate-700:hover { background-color: #334155 !important; }
+.hover\\:bg-amber-700:hover { background-color: #b45309 !important; }
+
+/* Responsive: md */
+@media (min-width: 768px) {
+  .md\\:flex-row { flex-direction: row !important; }
+  .md\\:items-center { align-items: center !important; }
+  .md\\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .md\\:text-3xl { font-size: 1.875rem !important; line-height: 2.25rem !important; }
+}
+
+/* Responsive: lg */
+@media (min-width: 1024px) {
+  .lg\\:grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+}
+
+/* Text alignment */
+.text-center { text-align: center !important; }
+.text-left { text-align: left !important; }
+.text-right { text-align: right !important; }
+
+/* Tracking */
+.tracking-wide { letter-spacing: 0.025em !important; }
+.tracking-wider { letter-spacing: 0.05em !important; }
+
+/* Misc positional */
+.absolute { position: absolute !important; }
+.relative { position: relative !important; }
+.right-0 { right: 0 !important; }
+.bottom-0 { bottom: 0 !important; }
+.transform { /* noop, activador */ }
+.w-4 { width: 1rem !important; }
+.w-5 { width: 1.25rem !important; }
+.h-4 { height: 1rem !important; }
+.h-5 { height: 1.25rem !important; }
+
+/* ===================================================== */
+/* FALLBACKS COMPLETOS — Clases faltantes detectadas     */
+/* Garantizan consistencia CSS entre dev local y prod    */
+/* ===================================================== */
+
+/* ------- PADDING CRÍTICO (afecta badges y tarjetas) ------- */
+.p-1 { padding: 0.25rem !important; }
+.p-2 { padding: 0.5rem !important; }
+.p-3 { padding: 0.75rem !important; }
+.px-2 { padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
+.px-3 { padding-left: 0.75rem !important; padding-right: 0.75rem !important; }
+.pt-3 { padding-top: 0.75rem !important; }
+.pr-2 { padding-right: 0.5rem !important; }
+.pl-3 { padding-left: 0.75rem !important; }
+.pl-7 { padding-left: 1.75rem !important; }
+.py-5 { padding-top: 1.25rem !important; padding-bottom: 1.25rem !important; }
+.py-8 { padding-top: 2rem !important; padding-bottom: 2rem !important; }
+
+/* ------- MARGIN ------- */
+.mb-2 { margin-bottom: 0.5rem !important; }
+.mt-1 { margin-top: 0.25rem !important; }
+.mt-4 { margin-top: 1rem !important; }
+.ml-2 { margin-left: 0.5rem !important; }
+.ml-4 { margin-left: 1rem !important; }
+.ml-8 { margin-left: 2rem !important; }
+.ml-auto { margin-left: auto !important; }
+.mx-1 { margin-left: 0.25rem !important; margin-right: 0.25rem !important; }
+.mx-6 { margin-left: 1.5rem !important; margin-right: 1.5rem !important; }
+.-mt-2 { margin-top: -0.5rem !important; }
+.-mx-2 { margin-left: -0.5rem !important; margin-right: -0.5rem !important; }
+
+/* ------- FONDOS SÓLIDOS ------- */
+.bg-slate-100 { background-color: #f1f5f9 !important; }
+.bg-slate-200 { background-color: #e2e8f0 !important; }
+.bg-slate-900 { background-color: #0f172a !important; }
+.bg-purple-200 { background-color: #e9d5ff !important; }
+.bg-purple-300 { background-color: #d8b4fe !important; }
+.bg-green-500 { background-color: #22c55e !important; }
+.bg-green-600 { background-color: #16a34a !important; }
+.bg-red-300 { background-color: #fca5a5 !important; }
+.bg-sky-50 { background-color: #f0f9ff !important; }
+.bg-sky-100 { background-color: #e0f2fe !important; }
+.bg-blue-50 { background-color: #eff6ff !important; }
+.bg-blue-100 { background-color: #dbeafe !important; }
+.bg-emerald-50 { background-color: #ecfdf5 !important; }
+.bg-emerald-100 { background-color: #d1fae5 !important; }
+.bg-emerald-600 { background-color: #059669 !important; }
+.bg-orange-100 { background-color: #ffedd5 !important; }
+.bg-cyan-100 { background-color: #cffafe !important; }
+.bg-pink-100 { background-color: #fce7f3 !important; }
+.bg-amber-500 { background-color: #f59e0b !important; }
+.bg-slate-600 { background-color: #475569 !important; }
+.bg-transparent { background-color: transparent !important; }
+
+/* ------- FONDOS CON OPACIDAD ------- */
+.bg-red-50\\/70 { background-color: rgba(254, 242, 242, 0.7) !important; }
+.bg-amber-50\\/70 { background-color: rgba(255, 251, 235, 0.7) !important; }
+.bg-red-100\\/60 { background-color: rgba(254, 226, 226, 0.6) !important; }
+.bg-amber-100\\/60 { background-color: rgba(254, 243, 199, 0.6) !important; }
+.bg-amber-100\\/50 { background-color: rgba(254, 243, 199, 0.5) !important; }
+.bg-white\\/50 { background-color: rgba(255, 255, 255, 0.5) !important; }
+.bg-purple-50\\/50 { background-color: rgba(250, 245, 255, 0.5) !important; }
+.bg-green-50\\/50 { background-color: rgba(240, 253, 244, 0.5) !important; }
+.bg-amber-50\\/50 { background-color: rgba(255, 251, 235, 0.5) !important; }
+.bg-red-50\\/50 { background-color: rgba(254, 242, 242, 0.5) !important; }
+.bg-slate-50\\/50 { background-color: rgba(248, 250, 252, 0.5) !important; }
+.bg-slate-50\\/30 { background-color: rgba(248, 250, 252, 0.3) !important; }
+.bg-slate-50\\/95 { background-color: rgba(248, 250, 252, 0.95) !important; }
+.bg-sky-50\\/50 { background-color: rgba(240, 249, 255, 0.5) !important; }
+.bg-cyan-50\\/30 { background-color: rgba(236, 254, 255, 0.3) !important; }
+.bg-green-200\\/70 { background-color: rgba(187, 247, 208, 0.7) !important; }
+.bg-red-200\\/70 { background-color: rgba(254, 202, 202, 0.7) !important; }
+
+/* ------- COLORES DE TEXTO ------- */
+.text-slate-300 { color: #cbd5e1 !important; }
+.text-slate-400 { color: #94a3b8 !important; }
+.text-purple-300 { color: #d8b4fe !important; }
+.text-red-500 { color: #ef4444 !important; }
+.text-blue-600 { color: #2563eb !important; }
+.text-blue-700 { color: #1d4ed8 !important; }
+.text-blue-800 { color: #1e40af !important; }
+.text-blue-100 { color: #dbeafe !important; }
+.text-emerald-600 { color: #059669 !important; }
+.text-emerald-700 { color: #047857 !important; }
+.text-emerald-800 { color: #065f46 !important; }
+.text-sky-700 { color: #0369a1 !important; }
+.text-sky-800 { color: #075985 !important; }
+.text-sky-400 { color: #38bdf8 !important; }
+.text-indigo-700 { color: #4338ca !important; }
+.text-orange-800 { color: #9a3412 !important; }
+.text-cyan-800 { color: #155e75 !important; }
+.text-pink-800 { color: #9d174d !important; }
+.text-white\\/80 { color: rgba(255, 255, 255, 0.8) !important; }
+.text-amber-100 { color: #fef3c7 !important; }
+
+/* ------- BORDES ------- */
+.border-gray-200 { border-color: #e5e7eb !important; }
+.border-transparent { border-color: transparent !important; }
+.border-purple-600 { border-color: #9333ea !important; }
+.border-purple-100 { border-color: #f3e8ff !important; }
+.border-sky-100 { border-color: #e0f2fe !important; }
+.border-sky-200 { border-color: #bae6fd !important; }
+.border-cyan-200 { border-color: #a5f3fc !important; }
+.border-blue-100 { border-color: #dbeafe !important; }
+.border-blue-200 { border-color: #bfdbfe !important; }
+.border-blue-300 { border-color: #93c5fd !important; }
+.border-amber-100 { border-color: #fef3c7 !important; }
+.border-amber-300 { border-color: #fcd34d !important; }
+.border-emerald-200 { border-color: #a7f3d0 !important; }
+.border-green-300 { border-color: #86efac !important; }
+.border-green-400 { border-color: #4ade80 !important; }
+.border-red-300 { border-color: #fca5a5 !important; }
+.border-red-400 { border-color: #f87171 !important; }
+.border-0 { border-width: 0 !important; border-style: none !important; }
+.border-2 { border-width: 2px !important; border-style: solid !important; }
+.border-b-2 { border-bottom-width: 2px !important; border-bottom-style: solid !important; }
+.border-l-2 { border-left-width: 2px !important; border-left-style: solid !important; }
+
+/* ------- ROUNDED VARIANTES ------- */
+.rounded-md { border-radius: 0.375rem !important; }
+.rounded-t-lg { border-top-left-radius: 0.5rem !important; border-top-right-radius: 0.5rem !important; }
+
+/* ------- HOVER STATES ------- */
+.hover\\:bg-red-300:hover { background-color: #fca5a5 !important; }
+.hover\\:bg-green-600:hover { background-color: #16a34a !important; }
+.hover\\:bg-green-700:hover { background-color: #15803d !important; }
+.hover\\:bg-green-100:hover { background-color: #dcfce7 !important; }
+.hover\\:bg-red-200:hover { background-color: #fecaca !important; }
+.hover\\:bg-purple-100:hover { background-color: #f3e8ff !important; }
+.hover\\:bg-purple-200:hover { background-color: #e9d5ff !important; }
+.hover\\:bg-amber-200:hover { background-color: #fde68a !important; }
+.hover\\:bg-amber-600:hover { background-color: #d97706 !important; }
+.hover\\:bg-sky-200:hover { background-color: #bae6fd !important; }
+.hover\\:bg-blue-200:hover { background-color: #bfdbfe !important; }
+.hover\\:bg-slate-300:hover { background-color: #cbd5e1 !important; }
+.hover\\:bg-slate-200\\/50:hover { background-color: rgba(226, 232, 240, 0.5) !important; }
+.hover\\:bg-white\\/30:hover { background-color: rgba(255, 255, 255, 0.3) !important; }
+.hover\\:bg-emerald-700:hover { background-color: #047857 !important; }
+.hover\\:text-purple-600:hover { color: #9333ea !important; }
+.hover\\:text-purple-800:hover { color: #6b21a8 !important; }
+.hover\\:text-slate-800:hover { color: #1e293b !important; }
+.hover\\:text-amber-900:hover { color: #78350f !important; }
+.hover\\:opacity-90:hover { opacity: 0.9 !important; }
+.hover\\:shadow-md:hover { box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06) !important; }
+.hover\\:shadow-xl:hover { box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04) !important; }
+.hover\\:border-blue-300:hover { border-color: #93c5fd !important; }
+
+/* ------- FOCUS / DISABLED / PLACEHOLDER ------- */
+.cursor-not-allowed { cursor: not-allowed !important; }
+.focus\\:ring-1:focus {
+  --tw-ring-offset-shadow: var(--tw-ring-inset, ) 0 0 0 var(--tw-ring-offset-width, 0px) var(--tw-ring-offset-color, #fff) !important;
+  --tw-ring-shadow: var(--tw-ring-inset, ) 0 0 0 calc(1px + var(--tw-ring-offset-width, 0px)) var(--tw-ring-color, #a855f7) !important;
+  box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000) !important;
+}
+.focus\\:ring-purple-300:focus { --tw-ring-color: #d8b4fe !important; }
+.focus\\:ring-purple-400:focus { --tw-ring-color: #c084fc !important; }
+.focus\\:ring-slate-200:focus { --tw-ring-color: #e2e8f0 !important; }
+.focus\\:ring-amber-300:focus { --tw-ring-color: #fcd34d !important; }
+.focus\\:ring-blue-500:focus { --tw-ring-color: #3b82f6 !important; }
+.disabled\\:bg-slate-50:disabled { background-color: #f8fafc !important; }
+.disabled\\:bg-slate-400:disabled { background-color: #94a3b8 !important; }
+.placeholder\\:text-purple-400::placeholder { color: #c084fc !important; }
+.placeholder\\:italic::placeholder { font-style: italic !important; }
+.placeholder\\:text-slate-400::placeholder { color: #94a3b8 !important; }
+
+/* ------- TIPOGRAFÍA Y DECORACIONES ------- */
+.italic { font-style: italic !important; }
+.normal-case { text-transform: none !important; }
+.underline { text-decoration-line: underline !important; }
+.opacity-50 { opacity: 0.5 !important; }
+.resize-none { resize: none !important; }
+.whitespace-nowrap { white-space: nowrap !important; }
+.overflow-x-auto { overflow-x: auto !important; }
+
+/* ------- TRANSFORMS Y TRANSICIONES ------- */
+.rotate-180 { rotate: 180deg !important; }
+.duration-200 { transition-duration: 200ms !important; }
+.duration-150 { transition-duration: 150ms !important; }
+.scale-105 { transform: scale(1.05) !important; }
+
+/* ------- SHADOW & RING ------- */
+.shadow-inner { box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.05) !important; }
+.ring-1 {
+  --tw-ring-offset-shadow: var(--tw-ring-inset, ) 0 0 0 var(--tw-ring-offset-width, 0px) var(--tw-ring-offset-color, #fff) !important;
+  --tw-ring-shadow: var(--tw-ring-inset, ) 0 0 0 calc(1px + var(--tw-ring-offset-width, 0px)) var(--tw-ring-color, rgba(0,0,0,0.05)) !important;
+  box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000) !important;
+}
+.ring-black\\/5 { --tw-ring-color: rgba(0, 0, 0, 0.05) !important; }
+
+/* ------- ANIMACIONES ------- */
+@keyframes bounce {
+  0%, 100% { transform: translateY(-25%); animation-timing-function: cubic-bezier(0.8, 0, 1, 1); }
+  50% { transform: translateY(0); animation-timing-function: cubic-bezier(0, 0, 0.2, 1); }
+}
+.animate-bounce { animation: bounce 1s infinite !important; }
+
+/* ------- SIZING ------- */
+.w-6 { width: 1.5rem !important; }
+.h-6 { height: 1.5rem !important; }
+.h-full { height: 100% !important; }
+.h-20 { height: 5rem !important; }
+.max-w-md { max-width: 28rem !important; }
+.max-w-\\[150px\\] { max-width: 150px !important; }
+.max-w-\\[200px\\] { max-width: 200px !important; }
+.max-h-\\[85vh\\] { max-height: 85vh !important; }
+.max-h-\\[400px\\] { max-height: 400px !important; }
+.max-h-64 { max-height: 16rem !important; }
+.max-h-96 { max-height: 24rem !important; }
+.max-h-40 { max-height: 10rem !important; }
+.max-h-32 { max-height: 8rem !important; }
+.min-h-\\[28px\\] { min-height: 28px !important; }
+.min-h-\\[32px\\] { min-height: 32px !important; }
+.min-h-\\[46px\\] { min-height: 46px !important; }
+.min-w-\\[120px\\] { min-width: 120px !important; }
+.h-\\[34px\\] { height: 34px !important; }
+
+/* ------- GRID HELPERS ------- */
+.col-span-2 { grid-column: span 2 / span 2 !important; }
+.col-span-3 { grid-column: span 3 / span 3 !important; }
+.gap-x-2 { column-gap: 0.5rem !important; }
+.gap-y-1\\.5 { row-gap: 0.375rem !important; }
+
+/* ------- GRADIENTES ADICIONALES ------- */
+.from-slate-50 { --tw-gradient-from: #f8fafc !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(248, 250, 252, 0)) !important; }
+.to-purple-50 { --tw-gradient-to: #faf5ff !important; }
+.from-purple-50 { --tw-gradient-from: #faf5ff !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(250, 245, 255, 0)) !important; }
+.to-fuchsia-50 { --tw-gradient-to: #fdf4ff !important; }
+.from-amber-50 { --tw-gradient-from: #fffbeb !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(255, 251, 235, 0)) !important; }
+.to-yellow-50 { --tw-gradient-to: #fefce8 !important; }
+.to-orange-50 { --tw-gradient-to: #fff7ed !important; }
+.from-green-50 { --tw-gradient-from: #f0fdf4 !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(240, 253, 244, 0)) !important; }
+.to-emerald-50 { --tw-gradient-to: #ecfdf5 !important; }
+.from-emerald-50 { --tw-gradient-from: #ecfdf5 !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(236, 253, 245, 0)) !important; }
+.to-teal-50 { --tw-gradient-to: #f0fdfa !important; }
+.from-green-100 { --tw-gradient-from: #dcfce7 !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(220, 252, 231, 0)) !important; }
+.to-emerald-100 { --tw-gradient-to: #d1fae5 !important; }
+.from-red-100 { --tw-gradient-from: #fee2e2 !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(254, 226, 226, 0)) !important; }
+.to-orange-100 { --tw-gradient-to: #ffedd5 !important; }
+.from-blue-600 { --tw-gradient-from: #2563eb !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(37, 99, 235, 0)) !important; }
+.to-blue-700 { --tw-gradient-to: #1d4ed8 !important; }
+
+/* ------- DISPLAY, POSITION, FLEX ------- */
+.fixed { position: fixed !important; }
+.flex-nowrap { flex-wrap: nowrap !important; }
+.list-disc { list-style-type: disc !important; }
+.list-inside { list-style-position: inside !important; }
+
+/* ------- GROUP-HOVER / TRANSLATE ------- */
+.group:hover .group-hover\\:translate-x-1 { transform: translateX(0.25rem) !important; }
+.group:hover .group-hover\\:text-blue-600 { color: #2563eb !important; }
+
+/* ===================================================== */
+/* FALLBACKS FINALES — Últimas 25 clases detectadas      */
+/* ===================================================== */
+
+/* Animations */
+@keyframes bounceIn { 0% { transform: scale(0.3); opacity: 0; } 50% { transform: scale(1.05); } 70% { transform: scale(0.9); } 100% { transform: scale(1); opacity: 1; } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+.animate-bounce-in { animation: bounceIn 0.5s ease-out !important; }
+.animate-fadeIn { animation: fadeIn 0.3s ease-out !important; }
+.animate-in { animation: fadeIn 0.2s ease-out !important; }
+.animate-slideInRight { animation: slideInRight 0.3s ease-out forwards !important; }
+.slide-in-from-top-1 { animation: fadeIn 0.2s ease-out !important; }
+
+/* Rose / Violet (used in some OCI/validation variants) */
+.bg-rose-100 { background-color: #ffe4e6 !important; }
+.text-rose-700 { color: #be123c !important; }
+.bg-violet-100 { background-color: #ede9fe !important; }
+.text-violet-700 { color: #6d28d9 !important; }
+
+/* Custom scrollbar */
+.custom-scrollbar::-webkit-scrollbar { width: 6px !important; height: 6px !important; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent !important; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background-color: rgba(148, 163, 184, 0.5) !important; border-radius: 3px !important; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: rgba(148, 163, 184, 0.8) !important; }
+
+/* Font weight / Flex alignment */
+.font-normal { font-weight: 400 !important; }
+.items-end { align-items: flex-end !important; }
+
+/* Spacing */
+.mr-2 { margin-right: 0.5rem !important; }
+.pb-1 { padding-bottom: 0.25rem !important; }
+.space-y-6 > * + * { margin-top: 1.5rem !important; }
+.space-y-0\\.5 > * + * { margin-top: 0.125rem !important; }
+
+/* Max height */
+.max-h-\\[88vh\\] { max-height: 88vh !important; }
+
+/* Widths */
+.w-8 { width: 2rem !important; }
+.w-16 { width: 4rem !important; }
+.w-20 { width: 5rem !important; }
+.w-24 { width: 6rem !important; }
+.w-28 { width: 7rem !important; }
+.w-32 { width: 8rem !important; }
+
+/* Hover: text */
+.hover\\:text-red-700:hover { color: #b91c1c !important; }
+.hover\\:text-sky-400:hover { color: #38bdf8 !important; }
 `;
 
 const EMBEDDED_STYLES = STRUCTURAL_STYLES + tailwindStyles;
@@ -560,6 +1201,8 @@ interface CargoImpConnectorAppProps {
   }) => void;
   /** Callback cuando el usuario guarda la configuración desde el panel */
   onSaveConfig?: (config: ConnectorConfig) => void;
+  /** Rol del usuario: 'ADM' = admin, otros roles = limitado */
+  userRole?: string;
 }
 
 const CargoImpConnectorApp: FunctionComponent<CargoImpConnectorAppProps> = ({ 
@@ -568,7 +1211,8 @@ const CargoImpConnectorApp: FunctionComponent<CargoImpConnectorAppProps> = ({
   onClose,
   isVisible,
   onCopyResult,
-  onSaveConfig
+  onSaveConfig,
+  userRole
 }) => {
   const [shipments, setShipments] = useState<InternalShipment[]>([]);
   const [selectedShipment, setSelectedShipment] = useState<InternalShipment | null>(null);
@@ -585,10 +1229,10 @@ const CargoImpConnectorApp: FunctionComponent<CargoImpConnectorAppProps> = ({
       if (initialShipments && initialShipments.length > 0) {
         const fullShipments = initialShipments.map(s => createShipmentFromPartial(s));
         setShipments(fullShipments);
-        // Si es uno solo, abrir modal directamente
+        // Si es uno solo, mostrar vista compacta de transmisión directa (sin abrir ChampModal)
         if (fullShipments.length === 1) {
           setSelectedShipment(fullShipments[0]);
-          setIsModalOpen(true);  // ABRIR MODAL DIRECTAMENTE
+          setIsModalOpen(false);  // NO abrir ChampModal, se muestra FullScreenAwbView en transmit mode
           setShowFullScreen(false);
         } else {
           setShowFullScreen(false);
@@ -599,14 +1243,14 @@ const CargoImpConnectorApp: FunctionComponent<CargoImpConnectorAppProps> = ({
         const fullShipment = createShipmentFromPartial(initialShipment);
         setShipments([fullShipment]);
         setSelectedShipment(fullShipment);
-        setIsModalOpen(true);  // ABRIR MODAL DIRECTAMENTE
+        setIsModalOpen(false);  // NO abrir ChampModal, se muestra FullScreenAwbView en transmit mode
         setShowFullScreen(false);
       } 
       // Demo con uno solo
       else {
         setShipments([mockShipments[0]]);
         setSelectedShipment(mockShipments[0]);
-        setIsModalOpen(true);  // ABRIR MODAL DIRECTAMENTE
+        setIsModalOpen(false);  // NO abrir ChampModal, se muestra FullScreenAwbView en transmit mode
         setShowFullScreen(false);
       }
     } else {
@@ -689,17 +1333,38 @@ const CargoImpConnectorApp: FunctionComponent<CargoImpConnectorAppProps> = ({
 
   if (!isVisible) return null;
 
-  // Si es una sola AWB, mostrar SOLO el modal directamente
+  // Si es una sola AWB, mostrar vista compacta de transmisión directa (DEFAULT)
+  // El ChampModal completo se abre desde el botón "Editor Completo"
   if (isSingleAwbMode && selectedShipment) {
     return (
-      <ChampModal
-        isOpen={isModalOpen}
-        onClose={handleCloseModal}
-        shipment={selectedShipment}
-        onSave={handleSaveShipment}
-        onCopySuccess={handleCopyResult}
-        onSaveConfig={onSaveConfig}
-      />
+      <>
+        <FullScreenAwbView
+          shipment={selectedShipment}
+          mode="transmit"
+          onClose={handleCloseModal}
+          onOpenModal={handleOpenModalFromFullScreen}
+          userRole={userRole}
+          onTransmitSuccess={(shipmentId, summary) => {
+            console.log(`✅ Transmisión exitosa para ${shipmentId}: ${summary}`);
+            if (onCopyResult) {
+              onCopyResult(true, selectedShipment.awbNumber, {
+                timestamp: new Date().toISOString(),
+                summary: `Transmitido: ${summary}`,
+                ediContent: summary
+              });
+            }
+          }}
+        />
+        <ChampModal
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          shipment={selectedShipment}
+          onSave={handleSaveShipment}
+          onCopySuccess={handleCopyResult}
+          onSaveConfig={onSaveConfig}
+          userRole={userRole}
+        />
+      </>
     );
   }
 
@@ -718,6 +1383,7 @@ const CargoImpConnectorApp: FunctionComponent<CargoImpConnectorAppProps> = ({
         onSave={handleSaveShipment}
         onCopySuccess={handleCopyResult}
         onSaveConfig={onSaveConfig}
+        userRole={userRole}
       />
     </>
   );
@@ -1166,7 +1832,10 @@ function createShipmentFromPartial(partial: Partial<InternalShipment>): Internal
     rates: normalizedRates,
     otherCharges: normalizedOtherCharges,
     oci: partial.oci || [],
-    specialHandlingCodes: partial.specialHandlingCodes || [],
+    // Auto-poblar SPH desde la política por defecto según AWB prefix si no vienen del backend
+    specialHandlingCodes: (partial.specialHandlingCodes && partial.specialHandlingCodes.length > 0)
+      ? partial.specialHandlingCodes
+      : getDefaultSphCodes(getAwbPrefix(partial.awbNumber || base.awbNumber)),
     // Special Service Request (opcional) - instrucciones especiales para la aerolínea
     specialServiceRequest: partial.specialServiceRequest || undefined,
     // Override manual del Charge Summary (opcional) - si viene del backend, se usa en lugar del cálculo
@@ -1198,6 +1867,9 @@ class CargoImpConnectorElement extends HTMLElement {
   
   // Callback para notificar resultado de copia EDI
   private copyResultCallback: ((result: CopyResult) => void) | null = null;
+
+  // Rol del usuario: 'ADM' = admin (ve Editor Completo y tabs completos)
+  private userRole: string = '';
 
   constructor() {
     super();
@@ -1297,6 +1969,7 @@ class CargoImpConnectorElement extends HTMLElement {
             initialShipments={this.currentShipments}
             onClose={() => this.close()}
             isVisible={this.isVisible}
+            userRole={this.userRole}
             onCopyResult={(success, awbNumber, details) => {
               // Crear objeto de resultado
               const result: CopyResult = {
@@ -1345,10 +2018,11 @@ class CargoImpConnectorElement extends HTMLElement {
    * @param shipmentData - Datos del AWB (puede ser parcial, se completan con defaults)
    *                       Puede incluir onCopyResult callback
    * 
-   * EJEMPLO DE USO CON CALLBACK:
+   * EJEMPLO DE USO CON CALLBACK Y ROL:
    * ediModal.openWithShipment({
    *   awbNumber: '145-12345678',
    *   origin: 'BOG',
+   *   userRole: 'ADM',  // 'ADM' = admin (ve Editor Completo), otro = oculto
    *   onCopyResult: (result) => {
    *     if (result.success) {
    *       console.log('EDI copiado:', result.ediContent);
@@ -1364,8 +2038,17 @@ class CargoImpConnectorElement extends HTMLElement {
       this.copyResultCallback = null;
     }
     
-    // Extraer solo los datos del shipment (sin callback)
-    const { onCopyResult, ...shipmentOnly } = shipmentData;
+    // Guardar rol del usuario - buscar en cualquier variación de case
+    // Soporta: userRole, UserRole, userrole, user_role, etc.
+    const rawData = shipmentData as any;
+    const roleValue = rawData.userRole || rawData.UserRole || rawData.userrole || rawData.USERROLE || rawData.user_role || '';
+    if (roleValue) {
+      this.userRole = String(roleValue);
+    }
+    console.log('[CargoImpConnector] userRole recibido:', this.userRole, '| raw keys:', Object.keys(shipmentData).filter(k => k.toLowerCase().includes('role')));
+    
+    // Extraer solo los datos del shipment (sin callback ni userRole)
+    const { onCopyResult, userRole, ...shipmentOnly } = shipmentData;
     
     this.currentShipment = shipmentOnly;
     this.currentShipments = null;
@@ -1384,11 +2067,19 @@ class CargoImpConnectorElement extends HTMLElement {
   /**
    * Abre el modal con múltiples shipments (lista con buscador)
    * @param shipmentsData - Array de AWBs (pueden ser parciales)
+   * @param options - Opciones adicionales como userRole
    */
-  openWithShipments(shipmentsData: ShipmentInputData[]) {
-    // Limpiar callbacks de cada shipment
+  openWithShipments(shipmentsData: ShipmentInputData[], options?: { userRole?: string }) {
+    // Guardar rol si viene en options o en el primer shipment
+    if (options?.userRole) {
+      this.userRole = options.userRole;
+    } else if (shipmentsData[0]?.userRole) {
+      this.userRole = shipmentsData[0].userRole;
+    }
+
+    // Limpiar callbacks y userRole de cada shipment
     const shipmentsOnly = shipmentsData.map(s => {
-      const { onCopyResult, ...shipmentOnly } = s;
+      const { onCopyResult, userRole, ...shipmentOnly } = s;
       return shipmentOnly;
     });
     
@@ -1404,6 +2095,22 @@ class CargoImpConnectorElement extends HTMLElement {
       bubbles: true,
       composed: true 
     }));
+  }
+
+  /**
+   * Establece el rol del usuario dinámicamente.
+   * @param role - 'ADM' para admin (ve Editor Completo + tabs completos), cualquier otro valor = limitado
+   * 
+   * EJEMPLO:
+   *   ediModal.setUserRole('ADM');   // Habilita Editor Completo
+   *   ediModal.setUserRole('OPE');   // Oculta Editor Completo
+   */
+  setUserRole(role: string) {
+    this.userRole = role;
+    // Si está visible, re-renderizar para aplicar el cambio
+    if (this.isVisible) {
+      this.renderApp();
+    }
   }
 
   /**

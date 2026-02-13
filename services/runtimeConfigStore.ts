@@ -138,11 +138,52 @@ function notifyListeners(): void {
 // ============================================================
 
 /**
- * Obtiene la política efectiva para una aerolínea
- * Combina defaults + overrides en memoria
+ * POLÍTICA MÁS COMPLETA (basada en DHL 992)
+ * Se usa para TODAS las aerolíneas por defecto.
+ * Las políticas individuales están comentadas/inactivas.
+ * Se irán activando una por una según se necesite.
+ */
+const MOST_COMPLETE_POLICY: AirlinePolicy = {
+  awbPrefix: '000',
+  name: 'Política Completa (Default para todos)',
+  policy: 71, // case 7, option 1 - la más completa
+  fwbVersion: 'FWB/16',
+  fhlVersion: 'FHL/4',
+  enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'NFY', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'OTH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+  disabledSegments: [], // Ninguno deshabilitado - la más completa
+  enabledFhlSegments: ALL_FHL_SEGMENTS,
+  disabledFhlSegments: [],
+  defaultSphCodes: ['EAP', 'PER', 'COL'],
+  ociFormat: 'withPrefix',
+  includeUnbUnz: true,
+  fhlAlwaysWithHeader: true,
+  useTypeBHeader: true,
+  typeBPriority: 'QK',
+  notes: 'Política completa unificada - todos los segmentos habilitados'
+};
+
+/**
+ * Obtiene la política efectiva para una aerolínea.
+ * 
+ * NOTA: Lógica de política individual por aerolínea INACTIVADA.
+ * Se usa la política más completa (estilo DHL 992) para TODAS las aerolíneas.
+ * Cuando se necesite activar una política específica, descomentar la lógica original.
  */
 export function getEffectiveAirlinePolicy(awbPrefix: string): AirlinePolicy {
-  const defaultPolicy = DEFAULT_AIRLINE_POLICIES[awbPrefix] || DEFAULT_AIRLINE_POLICIES['DEFAULT'];
+  // =====================================================
+  // LÓGICA DE POLÍTICA POR AEROLÍNEA — INACTIVADA
+  // Descomentar cuando se quiera activar gradualmente
+  // =====================================================
+  // const defaultPolicy = DEFAULT_AIRLINE_POLICIES[awbPrefix] || DEFAULT_AIRLINE_POLICIES['DEFAULT'];
+  
+  // Siempre usar la política más completa, personalizando solo awbPrefix y nombre
+  const airlineLookup = DEFAULT_AIRLINE_POLICIES[awbPrefix];
+  const defaultPolicy: AirlinePolicy = {
+    ...MOST_COMPLETE_POLICY,
+    awbPrefix: awbPrefix,
+    name: airlineLookup ? `${airlineLookup.name} (política completa)` : `AWB ${awbPrefix} (política completa)`,
+  };
+
   const override = runtimeConfig.cargoImp.policyOverrides[awbPrefix] || {};
   
   // Para FHL: si no hay configuración específica, TODOS los segmentos están habilitados por defecto

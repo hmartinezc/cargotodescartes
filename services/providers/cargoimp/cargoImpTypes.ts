@@ -133,6 +133,8 @@ export interface GeneratedSegment {
   errors: string[];
   /** Advertencias */
   warnings: string[];
+  /** Si el segmento es requerido (no se puede deshabilitar) */
+  required?: boolean;
   /** Campos desglosados para edición */
   fields: GeneratedField[];
 }
@@ -807,7 +809,7 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     fhlVersion: 'FHL/4',
     enabledSegments: ['FWB', 'AWB', 'RTG', 'SHP', 'CNE', 'AGT', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
     disabledSegments: ['FLT', 'SSR', 'ACC', 'OTH', 'CER', 'NFY'],
-    defaultSphCodes: ['ECC', 'EAP', 'PER'],
+    defaultSphCodes: ['EAP', 'PER', 'COL'],
     ociFormat: 'withPrefix',
     includeUnbUnz: true
   },
@@ -817,9 +819,9 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     policy: 21, // case 2, option 1
     fwbVersion: 'FWB/16',
     fhlVersion: 'FHL/4',
-    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
-    disabledSegments: ['OTH', 'NFY'],
-    defaultSphCodes: ['EAP'],
+    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+    disabledSegments: ['SSR', 'OTH', 'NFY'],
+    defaultSphCodes: ['EAP', 'PER', 'COL'],
     ociFormat: 'withPrefix',
     includeUnbUnz: true
   },
@@ -829,9 +831,9 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     policy: 24, // case 2, option 4
     fwbVersion: 'FWB/16',
     fhlVersion: 'FHL/4',
-    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'OTH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
-    disabledSegments: ['NFY'],
-    defaultSphCodes: ['EAP'],
+    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'OTH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+    disabledSegments: ['SSR', 'NFY'],
+    defaultSphCodes: ['EAP', 'PER', 'COL'],
     ociFormat: 'withPrefix',
     includeUnbUnz: true,
     notes: 'KLM requiere todos los segmentos incluyendo OTH'
@@ -842,9 +844,9 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     policy: 23, // case 2, option 3
     fwbVersion: 'FWB/16',
     fhlVersion: 'FHL/4',
-    enabledSegments: ['FWB', 'AWB', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'OTH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
-    disabledSegments: ['FLT', 'NFY'],
-    defaultSphCodes: ['EAP'],
+    enabledSegments: ['FWB', 'AWB', 'RTG', 'SHP', 'CNE', 'AGT', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'OTH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+    disabledSegments: ['SSR', 'FLT', 'NFY'],
+    defaultSphCodes: ['EAP', 'PER', 'COL'],
     ociFormat: 'withPrefix',
     includeUnbUnz: true
   },
@@ -857,9 +859,9 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     // Según legacy Reservas.cs:3048-3056, orden para option=2:
     // AWB + FLT + RTG + SHP + CNE + AGT + SSR + ACC + CVD + RTD + NG + NH + PPD + COL + CER + ISU + REF + SPH + OCI (sin OTH)
     // FWB se incluye pero solo genera la línea de versión (FWB/16) sin UNB/UNH (Reservas.cs:1447-1470)
-    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI'],
-    disabledSegments: ['FTR', 'OTH', 'NFY'], // Sin UNB/UNH/UNT/UNZ ni OTH, pero SÍ incluye línea FWB/16
-    defaultSphCodes: ['EAP'],
+    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI'],
+    disabledSegments: ['SSR', 'FTR', 'OTH', 'NFY'], // Sin UNB/UNH/UNT/UNZ ni OTH, pero SÍ incluye línea FWB/16
+    defaultSphCodes: ['EAP', 'PER', 'COL'],
     ociFormat: 'withPrefix',
     includeUnbUnz: false,
     notes: 'Atlas/Ethiopian: sin header UNB/UNH ni footer UNT/UNZ, pero SÍ incluye línea FWB/16'
@@ -870,9 +872,9 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     policy: 41, // case 4, option 1
     fwbVersion: 'FWB/16',
     fhlVersion: 'FHL/4',
-    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'OTH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
-    disabledSegments: ['NFY'],
-    defaultSphCodes: ['EAP'],
+    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'OTH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+    disabledSegments: ['SSR', 'NFY'],
+    defaultSphCodes: ['EAP', 'PER', 'COL'],
     ociFormat: 'withPrefix',
     includeUnbUnz: true,
     useAgencyNameForCER: true, // CER usa agencia_nombre en vez de firma
@@ -884,9 +886,9 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     policy: 41, // case 4, option 1
     fwbVersion: 'FWB/16',
     fhlVersion: 'FHL/4',
-    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'OTH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
-    disabledSegments: ['NFY'],
-    defaultSphCodes: ['EAP'],
+    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'OTH', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+    disabledSegments: ['SSR', 'NFY'],
+    defaultSphCodes: ['EAP', 'PER', 'COL'],
     ociFormat: 'withPrefix',
     includeUnbUnz: true,
     requiresHTS: true,
@@ -898,9 +900,9 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     policy: 71, // case 7, option 1 - DHL style
     fwbVersion: 'FWB/16',
     fhlVersion: 'FHL/4',
-    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'NFY', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
-    disabledSegments: ['OTH'],
-    defaultSphCodes: ['EAP'],
+    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'NFY', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+    disabledSegments: ['SSR', 'OTH'],
+    defaultSphCodes: ['EAP', 'PER', 'COL'],
     ociFormat: 'withPrefix',
     includeUnbUnz: true,
     fhlAlwaysWithHeader: true, // FHL siempre con UNB/UNZ
@@ -912,9 +914,9 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     policy: 71, // case 7
     fwbVersion: 'FWB/16',
     fhlVersion: 'FHL/4',
-    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'NFY', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
-    disabledSegments: ['OTH'],
-    defaultSphCodes: ['EAP'],
+    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'NFY', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+    disabledSegments: ['SSR', 'OTH'],
+    defaultSphCodes: ['EAP', 'PER', 'COL'],
     ociFormat: 'withPrefix',
     includeUnbUnz: true,
     fhlAlwaysWithHeader: true,
@@ -926,9 +928,9 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     policy: 21, // case 2, option 1
     fwbVersion: 'FWB/16',
     fhlVersion: 'FHL/4',
-    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
-    disabledSegments: ['OTH', 'NFY'],
-    defaultSphCodes: ['EAP'],
+    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+    disabledSegments: ['SSR', 'OTH', 'NFY'],
+    defaultSphCodes: ['EAP', 'PER', 'COL'],
     ociFormat: 'withPrefix',
     includeUnbUnz: true,
     useConsolidatedNG: true, // NG=NC/CONSOLIDATE FLOWERS para consolidados
@@ -940,9 +942,9 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     policy: 21, // case 2, option 1
     fwbVersion: 'FWB/16',
     fhlVersion: 'FHL/4',
-    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
-    disabledSegments: ['OTH', 'NFY'],
-    defaultSphCodes: ['EAP'],
+    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+    disabledSegments: ['SSR', 'OTH', 'NFY'],
+    defaultSphCodes: ['EAP', 'PER', 'COL'],
     ociFormat: 'withPrefix',
     includeUnbUnz: true
   },
@@ -954,9 +956,9 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     policy: 71, // case 7, option 1
     fwbVersion: 'FWB/16',
     fhlVersion: 'FHL/4',
-    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'NFY', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
-    disabledSegments: ['OTH'],
-    defaultSphCodes: ['EAP'],
+    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'NFY', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+    disabledSegments: ['SSR', 'OTH'],
+    defaultSphCodes: ['EAP', 'PER', 'COL'],
     ociFormat: 'withPrefix',
     includeUnbUnz: true,
     fhlAlwaysWithHeader: true,
@@ -969,9 +971,9 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     policy: 21, // case 2, option 1
     fwbVersion: 'FWB/16',
     fhlVersion: 'FHL/4',
-    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
-    disabledSegments: ['OTH', 'NFY'],
-    defaultSphCodes: ['EAP'],
+    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+    disabledSegments: ['SSR', 'OTH', 'NFY'],
+    defaultSphCodes: ['EAP', 'PER', 'COL'],
     ociFormat: 'withPrefix', // UE requiere EORI
     includeUnbUnz: true,
     notes: 'Air France: destino UE, requiere EORI en OCI'
@@ -982,9 +984,9 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     policy: 21, // case 2, option 1
     fwbVersion: 'FWB/16',
     fhlVersion: 'FHL/4',
-    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
-    disabledSegments: ['OTH', 'NFY'],
-    defaultSphCodes: ['EAP'],
+    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+    disabledSegments: ['SSR', 'OTH', 'NFY'],
+    defaultSphCodes: ['EAP', 'PER', 'COL'],
     ociFormat: 'withPrefix', // UE requiere EORI
     includeUnbUnz: true,
     notes: 'Lufthansa: destino UE, requiere EORI en OCI'
@@ -995,9 +997,9 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     policy: 21, // case 2, option 1
     fwbVersion: 'FWB/16',
     fhlVersion: 'FHL/4',
-    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
-    disabledSegments: ['OTH', 'NFY'],
-    defaultSphCodes: ['EAP'],
+    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+    disabledSegments: ['SSR', 'OTH', 'NFY'],
+    defaultSphCodes: ['EAP', 'PER', 'COL'],
     ociFormat: 'withPrefix',
     includeUnbUnz: true,
     notes: 'Emirates: prefijo AWB 205 (176 es código IATA numérico alternativo)'
@@ -1008,9 +1010,9 @@ export const DEFAULT_AIRLINE_POLICIES: Record<string, AirlinePolicy> = {
     policy: 21, // case 2, option 1
     fwbVersion: 'FWB/16',
     fhlVersion: 'FHL/4',
-    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
-    disabledSegments: ['OTH', 'NFY'],
-    defaultSphCodes: ['EAP'],
+    enabledSegments: ['FWB', 'AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'ACC', 'CVD', 'RTD', 'NG', 'NH', 'NV', 'NS', 'PPD', 'COL', 'CER', 'ISU', 'REF', 'SPH', 'OCI', 'FTR'],
+    disabledSegments: ['SSR', 'OTH', 'NFY'],
+    defaultSphCodes: ['EAP', 'PER', 'COL'],
     ociFormat: 'withPrefix',
     includeUnbUnz: true
   }
@@ -1055,6 +1057,8 @@ export interface GeneratedCargoImpMessage {
   awbNumber: string;
   /** Número HAWB (solo para FHL) */
   hawbNumber?: string;
+  /** Es un envío consolidado (tiene houses) */
+  isConsolidation?: boolean;
   /** Segmentos generados */
   segments: GeneratedSegment[];
   /** Mensaje completo generado */

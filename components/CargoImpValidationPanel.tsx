@@ -569,7 +569,50 @@ export const CargoImpValidationPanel: FunctionComponent<CargoImpValidationPanelP
                 {r.errorCount > 0 && ` ×${r.errorCount}`}
               </div>
             ))}
+            {/* Pill para issues globales (cross-validation, longitud, etc.) */}
+            {(() => {
+              const globalIssues = validation.allIssues.filter(i => i.segment === 'GLOBAL');
+              const globalErrors = globalIssues.filter(i => i.severity === 'error').length;
+              const globalWarnings = globalIssues.filter(i => i.severity === 'warning').length;
+              if (globalIssues.length === 0) return null;
+              return (
+                <div
+                  className={`
+                    px-1.5 py-0.5 rounded text-[9px] font-mono font-bold cursor-pointer
+                    transition-colors hover:ring-1 hover:ring-purple-400
+                    ${globalErrors > 0 ? 'bg-red-200 text-red-800' 
+                      : globalWarnings > 0 ? 'bg-amber-200 text-amber-800' 
+                      : 'bg-blue-200 text-blue-800'}
+                  `}
+                  title={`GLOBAL: ${globalErrors} error(es), ${globalWarnings} warning(s)`}
+                >
+                  GLOBAL
+                  {globalErrors > 0 && ` ×${globalErrors}`}
+                </div>
+              );
+            })()}
           </div>
+
+          {/* Issues globales (cross-validation) — mostrar ARRIBA para visibilidad */}
+          {validation.allIssues.filter(i => i.segment === 'GLOBAL').length > 0 && (
+            <div className={`p-2 rounded-lg border ${
+              validation.allIssues.filter(i => i.segment === 'GLOBAL' && i.severity === 'error').length > 0
+                ? 'bg-red-50 border-red-300'
+                : 'bg-amber-50 border-amber-300'
+            }`}>
+              <div className="text-[10px] font-semibold uppercase mb-1.5 flex items-center gap-1 text-slate-700">
+                <Zap size={12} /> Validaciones Globales ({validation.allIssues.filter(i => i.segment === 'GLOBAL').length})
+              </div>
+              <div className="space-y-1">
+                {validation.allIssues
+                  .filter(i => i.segment === 'GLOBAL')
+                  .map((issue, idx) => (
+                    <IssueItem key={`global-${idx}`} issue={issue} compact={compact} />
+                  ))
+                }
+              </div>
+            </div>
+          )}
 
           {/* Lista de segmentos con issues */}
           <div className="space-y-2">
@@ -582,23 +625,6 @@ export const CargoImpValidationPanel: FunctionComponent<CargoImpValidationPanelP
               />
             ))}
           </div>
-
-          {/* Issues globales */}
-          {validation.allIssues.filter(i => i.segment === 'GLOBAL').length > 0 && (
-            <div className="border-t border-slate-200 pt-2">
-              <div className="text-[10px] font-semibold text-slate-500 uppercase mb-1.5 flex items-center gap-1">
-                <Zap size={12} /> Validaciones Globales
-              </div>
-              <div className="space-y-1">
-                {validation.allIssues
-                  .filter(i => i.segment === 'GLOBAL')
-                  .map((issue, idx) => (
-                    <IssueItem key={`global-${idx}`} issue={issue} compact={compact} />
-                  ))
-                }
-              </div>
-            </div>
-          )}
 
           {/* Score y estadísticas */}
           <div className="border-t border-slate-200 pt-2 flex items-center justify-between">

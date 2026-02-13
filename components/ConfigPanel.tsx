@@ -1369,8 +1369,8 @@ ${config.securityOci?.regulatedAgentNumber ? `  { "isoCountryCode": "CO", "infor
                                         const currentEnabled = policy.enabledSegments || allSegments;
                                         const currentDisabled = policy.disabledSegments || [];
                                         
-                                        let newEnabled: string[];
-                                        let newDisabled: string[];
+                                        let newEnabled: typeof allSegments;
+                                        let newDisabled: typeof allSegments;
                                         
                                         if (isEnabled) {
                                           newEnabled = currentEnabled.filter(s => s !== seg);
@@ -1387,7 +1387,7 @@ ${config.securityOci?.regulatedAgentNumber ? `  { "isoCountryCode": "CO", "infor
                                         updateConfig('cargoImp', { ...config.cargoImp, airlinePolicies: updated });
                                         
                                         // Sincronizar con runtimeConfigStore para que el EDI se actualice
-                                        updateAirlinePolicy(code, { enabledSegments: newEnabled, disabledSegments: newDisabled });
+                                        updateAirlinePolicy(code, { enabledSegments: newEnabled as any, disabledSegments: newDisabled as any });
                                       }}
                                       className={`p-1 rounded text-[9px] font-mono font-bold text-center transition-all ${
                                         isEnabled 

@@ -7,6 +7,13 @@ declare global {
       readonly target: T;
     }
   }
+  
+  // Augmentar EventTarget para que e.target.value/checked funcione en TSX
+  // Esto es necesario porque Preact tipifica target como EventTarget genérico
+  interface EventTarget {
+    value?: string;
+    checked?: boolean;
+  }
 }
 
 // Extender los tipos de eventos de Preact para que e.target.value funcione

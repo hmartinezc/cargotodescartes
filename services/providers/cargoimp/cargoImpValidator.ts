@@ -198,6 +198,20 @@ export function validateCargoImpMessage(
 
   // 2. Validaciones globales del mensaje
   const globalIssues = validateGlobalRules(message, enabledSegments, policy);
+  
+  // Merge global issues into corresponding segmentResults when they have a specific segment code
+  // Issues with segment='GLOBAL' stay global; issues with a specific segment code get merged
+  for (const issue of globalIssues) {
+    if (issue.segment !== 'GLOBAL') {
+      const matchingResult = segmentResults.find(r => r.segment === issue.segment);
+      if (matchingResult) {
+        matchingResult.issues.push(issue);
+        if (issue.severity === 'error') { matchingResult.errorCount++; matchingResult.isValid = false; }
+        else if (issue.severity === 'warning') { matchingResult.warningCount++; }
+        else if (issue.severity === 'info') { matchingResult.infoCount++; }
+      }
+    }
+  }
   allIssues.push(...globalIssues);
 
   // 3. Validar longitud de líneas del fullMessage
@@ -279,7 +293,7 @@ function validateFwbSegment(
       validateRtdSegment(lines, issues, segment);
       break;
     case 'NG':
-      validateNgSegment(lines, issues, segment);
+      validateNgSegment(lines, issues, segment, message);
       break;
     case 'NH':
       validateNhSegment(lines, issues, segment, policy);
@@ -440,7 +454,7 @@ function validateAwbSegment(lines: string[], issues: ValidationIssue[], segment:
       severity: 'error',
       segment: 'AWB',
       message: 'Segmento AWB está vacío. Es OBLIGATORIO.',
-      rule: 'AWB: Segmento requerido en FWB'
+      rule: 'AWB: Segmento requerido en FWB [FNA: AWB0010]'
     });
     return;
   }
@@ -460,7 +474,7 @@ function validateAwbSegment(lines: string[], issues: ValidationIssue[], segment:
         segment: 'AWB',
         field: 'awbPrefix',
         message: 'Falta prefijo de aerolínea (3 dígitos numéricos)',
-        rule: 'AWB [1A]: Prefijo aerolínea 3[n]',
+        rule: 'AWB [1A]: Prefijo aerolínea 3[n] [FNA: AWB0015]',
         expected: 'Ej: 992, 075, 176',
         found: content.substring(0, 5)
       });
@@ -470,7 +484,7 @@ function validateAwbSegment(lines: string[], issues: ValidationIssue[], segment:
         segment: 'AWB',
         field: 'awbPrefix',
         message: `Prefijo de aerolínea debe ser exactamente 3 dígitos. Encontrado: ${prefixMatch[1].length} dígito(s)`,
-        rule: 'AWB [1A]: Prefijo aerolínea 3[n]',
+        rule: 'AWB [1A]: Prefijo aerolínea 3[n] [FNA: AWB0015]',
         expected: '3 dígitos (ej: 992)',
         found: prefixMatch[1]
       });
@@ -484,7 +498,7 @@ function validateAwbSegment(lines: string[], issues: ValidationIssue[], segment:
         segment: 'AWB',
         field: 'awbSerial',
         message: `Número serial AWB debe ser exactamente 8 dígitos. Encontrado: ${serialMatch[1].length}`,
-        rule: 'AWB [1B]: Serial 8[n]',
+        rule: 'AWB [1B]: Serial 8[n] [FNA: AWB0020]',
         expected: '8 dígitos',
         found: serialMatch[1]
       });
@@ -514,7 +528,7 @@ function validateAwbSegment(lines: string[], issues: ValidationIssue[], segment:
         segment: 'AWB',
         field: 'pieces',
         message: 'Falta indicador de piezas /T{cantidad}',
-        rule: 'AWB [22J]: Piezas hasta 4[n] con prefijo T',
+        rule: 'AWB [22J]: Piezas hasta 4[n] con prefijo T [FNA: AWB0040]',
         suggestion: 'Formato: /T304 (304 piezas)'
       });
     }
@@ -524,7 +538,7 @@ function validateAwbSegment(lines: string[], issues: ValidationIssue[], segment:
         segment: 'AWB',
         field: 'weight',
         message: 'Falta indicador de peso K{peso} o L{peso}',
-        rule: 'AWB: Peso a[1]n[1-7] — a[1] = K (kilos) o L (libras)',
+        rule: 'AWB: Peso a[1]n[1-7] — K (kilos) o L (libras) [FNA: AWB0045/AWB0050]',
         suggestion: 'Formato: K1500.0 (1500 kilos) o L3300.0 (3300 libras)'
       });
     }
@@ -554,7 +568,7 @@ function validateAwbSegment(lines: string[], issues: ValidationIssue[], segment:
         segment: 'AWB',
         field: 'awbCheckDigit',
         message: `Dígito de control Mod-7 inválido. Serial "${serial}" → últimos 7 dígitos: ${serialBase}, mod 7 = ${expectedCheck}, pero check digit es ${checkDigit}`,
-        rule: 'AWB: El 8vo dígito del serial es check digit (primeros 7 dígitos mod 7)',
+        rule: 'AWB: El 8vo dígito del serial es check digit Mod-7 [FNA: AWB0020]',
         expected: `${serialBase}${expectedCheck}`,
         found: serial,
         suggestion: `Corregir serial a ${serialBase}${expectedCheck}`
@@ -568,7 +582,7 @@ function validateAwbSegment(lines: string[], issues: ValidationIssue[], segment:
         segment: 'AWB',
         field: 'origin',
         message: `Código de origen "${origin}" no es un código IATA válido (3 letras mayúsculas)`,
-        rule: 'AWB [1/18]: Origen 3[a] código IATA',
+        rule: 'AWB [1/18]: Origen 3[a] código IATA [FNA: AWB0025]',
         found: origin
       });
     }
@@ -579,7 +593,7 @@ function validateAwbSegment(lines: string[], issues: ValidationIssue[], segment:
         segment: 'AWB',
         field: 'destination',
         message: `Código de destino "${destination}" no es un código IATA válido (3 letras mayúsculas)`,
-        rule: 'AWB [1/18]: Destino 3[a] código IATA',
+        rule: 'AWB [1/18]: Destino 3[a] código IATA [FNA: AWB0030]',
         found: destination
       });
     }
@@ -591,7 +605,7 @@ function validateAwbSegment(lines: string[], issues: ValidationIssue[], segment:
         segment: 'AWB',
         field: 'pieces',
         message: 'Número de piezas debe ser mayor a 0',
-        rule: 'AWB [22J]: Piezas hasta 4[n]',
+        rule: 'AWB [22J]: Piezas hasta 4[n] [FNA: AWB0040]',
         found: pieces
       });
     }
@@ -601,7 +615,7 @@ function validateAwbSegment(lines: string[], issues: ValidationIssue[], segment:
         segment: 'AWB',
         field: 'pieces',
         message: `Número de piezas excede 4 dígitos (${pieces.length})`,
-        rule: 'AWB [22J]: Máximo 4 dígitos',
+        rule: 'AWB [22J]: Máximo 4 dígitos [FNA: AWB0040]',
         found: pieces
       });
     }
@@ -614,7 +628,7 @@ function validateAwbSegment(lines: string[], issues: ValidationIssue[], segment:
         segment: 'AWB',
         field: 'weight',
         message: 'Peso debe ser un número mayor a 0',
-        rule: 'AWB [22K]: Peso hasta 7[n] con decimales',
+        rule: 'AWB [22K]: Peso hasta 7[n] con decimales [FNA: AWB0050]',
         found: weight
       });
     }
@@ -624,7 +638,7 @@ function validateAwbSegment(lines: string[], issues: ValidationIssue[], segment:
         segment: 'AWB',
         field: 'weight',
         message: `Peso excede 7 dígitos (${weight})`,
-        rule: 'AWB [22K]: Máximo 7 dígitos',
+        rule: 'AWB [22K]: Máximo 7 dígitos [FNA: AWB0050]',
         found: weight
       });
     }
@@ -641,7 +655,7 @@ function validateFltSegment(lines: string[], issues: ValidationIssue[], segment:
       severity: 'warning',
       segment: 'FLT',
       message: 'Segmento FLT está vacío. Es obligatorio para procesos de aduana y ACAS.',
-      rule: 'FLT: Obligatorio para customs/ACAS',
+      rule: 'FLT: Obligatorio para customs/ACAS [FNA: FLT0010]',
       suggestion: 'Formato: FLT/XX9999/DD (Aerolínea+Vuelo/Día)'
     });
     return;
@@ -659,91 +673,94 @@ function validateFltSegment(lines: string[], issues: ValidationIssue[], segment:
     return;
   }
 
-  // Extraer vuelos: /CARRIER+NUMBER/DAY
-  const flightParts = content.replace('FLT', '').split(/(?=\/)/);
+  // Parsing correcto: FLT/CCNNNN/DD[/CCNNNN/DD]...
+  // El contenido después de "FLT" es una serie de pares /vuelo/día
+  // Usar split por "/" y reconstruir pares (vuelo, día)
+  const raw = content.replace(/^FLT\/?/, ''); // quitar "FLT" o "FLT/"
+  const parts = raw.split('/').filter(p => p !== '');
   
-  for (const part of flightParts) {
-    if (!part.trim()) continue;
-    
-    // Formato esperado: /XX1234/DD
-    const flightMatch = part.match(/^\/([A-Z0-9]{2,7})\/(\d{1,2})$/);
-    
-    if (!flightMatch) {
-      // Intentar detectar problemas comunes
-      const basicMatch = part.match(/^\/(.+)$/);
-      if (basicMatch) {
-        const flightData = basicMatch[1];
-        const flightPieces = flightData.split('/');
-        
-        if (flightPieces.length >= 1) {
-          const flightNum = flightPieces[0];
-          
-          // Validar número de vuelo
-          // El carrier code es 2 chars (letras o alfanumérico), seguido de número
-          const carrierMatch = flightNum.match(/^([A-Z0-9]{2})(\d{1,5}[A-Z]?)$/);
-          if (!carrierMatch) {
-            issues.push({
-              severity: 'error',
-              segment: 'FLT',
-              field: 'flightNumber',
-              message: `Número de vuelo "${flightNum}" no es válido. Formato: 2 chars carrier + hasta 5 dígitos`,
-              rule: 'FLT [19A]: Carrier 2[m] + Número hasta 5[m]',
-              expected: 'Ej: DA926, EY7122, CX456',
-              found: flightNum,
-              suggestion: 'NO repetir el código de aerolínea en el número. Ej: usar "926" no "DA926" si carrier ya es "DA"'
-            });
-          }
+  // parts debería ser pares: [vuelo, día, vuelo, día, ...]
+  if (parts.length === 0) {
+    issues.push({
+      severity: 'error',
+      segment: 'FLT',
+      message: 'Segmento FLT no contiene información de vuelo.',
+      rule: 'FLT: Al menos un vuelo requerido',
+      suggestion: 'Formato: FLT/XX9999/DD'
+    });
+    return;
+  }
 
-          // Validar día si existe — spec: n[2] = exactamente 2 dígitos
-          if (flightPieces.length >= 2) {
-            const day = flightPieces[1];
-            if (!FLT_DATE_LOOSE.test(day)) {
-              issues.push({
-                severity: 'error',
-                segment: 'FLT',
-                field: 'flightDate',
-                message: `Día de vuelo "${day}" no es válido. Debe ser 2 dígitos (01-31)`,
-                rule: 'FLT [19A]: Día n[2] (día del mes)',
-                expected: '01-31',
-                found: day
-              });
-            } else {
-              // Warn si es 1 dígito — spec exige n[2]
-              if (day.length === 1) {
-                issues.push({
-                  severity: 'warning',
-                  segment: 'FLT',
-                  field: 'flightDate',
-                  message: `Día de vuelo "${day}" tiene 1 dígito. Spec IATA exige n[2] (2 dígitos). Usar "0${day}" para cumplir spec.`,
-                  rule: 'FLT [19A]: Día n[2] — usar cero-fill',
-                  found: day,
-                  expected: `0${day}`,
-                  suggestion: `Cambiar ${day} por 0${day}`
-                });
-              }
-              const dayNum = parseInt(day);
-              if (dayNum < 1 || dayNum > 31) {
-                issues.push({
-                  severity: 'error',
-                  segment: 'FLT',
-                  field: 'flightDate',
-                  message: `Día de vuelo ${day} fuera de rango (1-31)`,
-                  rule: 'FLT [19A]: Día debe ser 1-31',
-                  found: day
-                });
-              }
-            }
-          }
-        }
-      } else {
+  // Procesar en pares (vuelo, día)
+  let i = 0;
+  while (i < parts.length) {
+    const flightNum = parts[i];
+    const day = parts[i + 1]; // puede ser undefined si falta
+
+    // Validar número de vuelo: 2 chars carrier + hasta 5 dígitos (+ sufijo letra opcional)
+    const carrierMatch = flightNum.match(/^([A-Z0-9]{2})(\d{1,5}[A-Z]?)$/);
+    if (!carrierMatch) {
+      issues.push({
+        severity: 'error',
+        segment: 'FLT',
+        field: 'flightNumber',
+        message: `Número de vuelo "${flightNum}" no es válido. Formato: 2 chars carrier + hasta 5 dígitos`,
+        rule: 'FLT [19A]: Carrier 2[m] + Número hasta 5[m] [FNA: FLT0015/FLT0020]',
+        expected: 'Ej: DA926, EY7122, CX456',
+        found: flightNum,
+        suggestion: 'NO repetir el código de aerolínea en el número. Ej: usar "926" no "DA926" si carrier ya es "DA"'
+      });
+    }
+
+    // Validar día si existe — spec: n[2] = exactamente 2 dígitos
+    if (day !== undefined) {
+      if (!FLT_DATE_LOOSE.test(day)) {
         issues.push({
           severity: 'error',
           segment: 'FLT',
-          message: `Formato de vuelo inválido: "${part}"`,
-          rule: 'FLT: Formato /CarrierNumber/Day',
-          suggestion: 'Ej: /DA926/15'
+          field: 'flightDate',
+          message: `Día de vuelo "${day}" no es válido. Debe ser 2 dígitos (01-31)`,
+          rule: 'FLT [19A]: Día n[2] (día del mes) [FNA: FLT0025]',
+          expected: '01-31',
+          found: day
         });
+      } else {
+        if (day.length === 1) {
+          issues.push({
+            severity: 'warning',
+            segment: 'FLT',
+            field: 'flightDate',
+            message: `Día de vuelo "${day}" tiene 1 dígito. Spec IATA exige n[2] (2 dígitos). Usar "0${day}" para cumplir spec.`,
+            rule: 'FLT [19A]: Día n[2] — usar cero-fill',
+            found: day,
+            expected: `0${day}`,
+            suggestion: `Cambiar ${day} por 0${day}`
+          });
+        }
+        const dayNum = parseInt(day);
+        if (dayNum < 1 || dayNum > 31) {
+          issues.push({
+            severity: 'error',
+            segment: 'FLT',
+            field: 'flightDate',
+            message: `Día de vuelo ${day} fuera de rango (1-31)`,
+            rule: 'FLT [19A]: Día debe ser 1-31',
+            found: day
+          });
+        }
       }
+      i += 2; // avanzar vuelo + día
+    } else {
+      // Falta día — warning
+      issues.push({
+        severity: 'warning',
+        segment: 'FLT',
+        field: 'flightDate',
+        message: `Vuelo "${flightNum}" no tiene día de vuelo.`,
+        rule: 'FLT [19A]: Día n[2] recomendado',
+        suggestion: 'Agregar día: /DD después del número de vuelo'
+      });
+      i += 1; // avanzar solo vuelo
     }
   }
 }
@@ -863,7 +880,7 @@ function validatePartySegment(
       severity: 'error',
       segment: segCode,
       message: `Segmento ${segCode} está vacío. Es OBLIGATORIO.`,
-      rule: `${segCode}: Segmento requerido`
+      rule: `${segCode}: Segmento requerido [FNA: ${segCode}0010]`
     });
     return;
   }
@@ -910,7 +927,7 @@ function validatePartySegment(
       segment: segCode,
       field: 'name',
       message: `Nombre del ${label} es OBLIGATORIO y está vacío`,
-      rule: `${segCode} [2/4]: Nombre hasta 35[t]`
+      rule: `${segCode} [2/4]: Nombre hasta 35[t] [FNA: ${segCode}0020]`
     });
   } else {
     // Extraer nombre después del / o /NAM/
@@ -921,7 +938,7 @@ function validatePartySegment(
         segment: segCode,
         field: 'name',
         message: `Nombre del ${label} excede 35 caracteres (tiene ${nameValue.length})`,
-        rule: `${segCode} [2/4]: Nombre hasta 35[t]`,
+        rule: `${segCode} [2/4]: Nombre hasta 35[t] [FNA: ${segCode}0020]`,
         found: nameValue.substring(0, 40) + '...',
         suggestion: 'Truncar el nombre a 35 caracteres máximo'
       });
@@ -945,7 +962,7 @@ function validatePartySegment(
       segment: segCode,
       field: 'address',
       message: `Dirección del ${label} es OBLIGATORIA y está vacía. Si no se conoce, usar SN (Sin Número).`,
-      rule: `${segCode} [2/4]: Dirección hasta 35[t]`,
+      rule: `${segCode} [2/4]: Dirección hasta 35[t] [FNA: ${segCode}0025]`,
       suggestion: 'Si no se tiene dirección completa, usar /SN (Sin Número)'
     });
   } else {
@@ -956,7 +973,7 @@ function validatePartySegment(
         segment: segCode,
         field: 'address',
         message: `Dirección del ${label} excede 35 caracteres (tiene ${addressValue.length})`,
-        rule: `${segCode} [2/4]: Dirección hasta 35[t]`,
+        rule: `${segCode} [2/4]: Dirección hasta 35[t] [FNA: ${segCode}0025]`,
         found: addressValue.substring(0, 40) + '...',
         suggestion: 'Truncar la dirección a 35 caracteres'
       });
@@ -982,7 +999,7 @@ function validatePartySegment(
       segment: segCode,
       field: 'city',
       message: `Ciudad del ${label} es OBLIGATORIA y está vacía`,
-      rule: `${segCode} [2/4]: Ciudad hasta 17[t]`
+      rule: `${segCode} [2/4]: Ciudad hasta 17[t] [FNA: ${segCode}0030]`
     });
   } else {
     const cityParts = cityLine.replace(/^\//, '').split('/');
@@ -993,7 +1010,7 @@ function validatePartySegment(
         segment: segCode,
         field: 'city',
         message: `Ciudad del ${label} excede 17 caracteres (tiene ${cityValue.length})`,
-        rule: `${segCode} [2/4]: Ciudad hasta 17[t]`,
+        rule: `${segCode} [2/4]: Ciudad hasta 17[t] [FNA: ${segCode}0030]`,
         found: cityValue
       });
     }
@@ -1006,7 +1023,7 @@ function validatePartySegment(
           segment: segCode,
           field: 'state',
           message: `Estado/Provincia del ${label} excede 9 caracteres`,
-          rule: `${segCode} [2/4]: Estado hasta 9[t] (USA: 2[a])`,
+          rule: `${segCode} [2/4]: Estado hasta 9[t] (USA: 2[a]) [FNA: ${segCode}0035]`,
           found: state
         });
       }
@@ -1021,7 +1038,7 @@ function validatePartySegment(
       segment: segCode,
       field: 'country',
       message: `País del ${label} es OBLIGATORIO y está vacío`,
-      rule: `${segCode} [2/4]: Código de país 2[a] ISO`
+      rule: `${segCode} [2/4]: Código de país 2[a] ISO [FNA: ${segCode}0040]`
     });
   } else {
     const countryParts = countryLine.replace(/^\//, '').split('/');
@@ -1034,7 +1051,7 @@ function validatePartySegment(
         segment: segCode,
         field: 'country',
         message: `Código de país "${country}" no es válido. Debe ser código ISO de 2 letras mayúsculas`,
-        rule: `${segCode} [2/4]: Código de país 2[a] ISO`,
+        rule: `${segCode} [2/4]: Código de país 2[a] ISO [FNA: ${segCode}0040]`,
         expected: 'Ej: US, CO, EC, DE, CN',
         found: country
       });
@@ -1053,7 +1070,7 @@ function validatePartySegment(
           segment: segCode,
           field: 'postalCode',
           message: `Código postal del ${label} está vacío. Si no se conoce, usar "00000"`,
-          rule: `${segCode} [2/4]: Código postal hasta 9[t]. Regla de relleno: si no existe, usar "00000"`,
+          rule: `${segCode} [2/4]: Código postal hasta 9[t]. Regla de relleno: si no existe, usar "00000" [FNA: ${segCode}0045]`,
           suggestion: 'Usar "00000" en lugar de dejar vacío'
         });
       } else if (postal.length > 9) {
@@ -1062,7 +1079,7 @@ function validatePartySegment(
           segment: segCode,
           field: 'postalCode',
           message: `Código postal del ${label} excede 9 caracteres (tiene ${postal.length})`,
-          rule: `${segCode} [2/4]: Código postal hasta 9[t]`,
+          rule: `${segCode} [2/4]: Código postal hasta 9[t] [FNA: ${segCode}0045]`,
           found: postal
         });
       }
@@ -1078,7 +1095,7 @@ function validatePartySegment(
             segment: segCode,
             field: 'contact',
             message: `Identificador de contacto "${contactType}" no reconocido. Usar TE (teléfono), FX (fax) o EM (email)`,
-            rule: `${segCode} [2/4]: Identificador de contacto 3[a]`,
+            rule: `${segCode} [2/4]: Identificador de contacto 3[a] [FNA: ${segCode}0050]`,
             expected: 'TE, FX o EM',
             found: contactType
           });
@@ -1090,7 +1107,7 @@ function validatePartySegment(
             segment: segCode,
             field: 'contact',
             message: `Número de contacto excede 25 caracteres (hasta 70 permitido con ACAS)`,
-            rule: `${segCode} [2/4]: Contacto hasta 25[t] (ACAS: 70[t])`,
+            rule: `${segCode} [2/4]: Contacto hasta 25[t] (ACAS: 70[t]) [FNA: ${segCode}0055]`,
             found: contactValue.substring(0, 30) + '...'
           });
         }
@@ -1102,7 +1119,7 @@ function validatePartySegment(
         segment: segCode,
         field: 'postalCode',
         message: `Falta código postal del ${label}. Si no se conoce, usar "00000"`,
-        rule: `${segCode} [2/4]: Código postal obligatorio. Regla de relleno: usar "00000" si no existe`,
+        rule: `${segCode} [2/4]: Código postal obligatorio. Regla de relleno: usar "00000" si no existe [FNA: ${segCode}0045]`,
         suggestion: 'Agregar /CC/00000 después del código de país'
       });
     }
@@ -1146,7 +1163,7 @@ function validateAgtSegment(lines: string[], issues: ValidationIssue[], segment:
       severity: 'error',
       segment: 'AGT',
       message: 'Segmento AGT está vacío. Es OBLIGATORIO.',
-      rule: 'AGT: Segmento requerido'
+      rule: 'AGT: Segmento requerido [FNA: AGT0010]'
     });
     return;
   }
@@ -1171,7 +1188,7 @@ function validateAgtSegment(lines: string[], issues: ValidationIssue[], segment:
         segment: 'AGT',
         field: 'iataCode',
         message: `Código IATA del agente tiene ${iataCode.length} dígitos. Se esperan 7`,
-        rule: 'AGT: Código IATA 7[n]',
+        rule: 'AGT: Código IATA 7[n] [FNA: AGT0020]',
         found: iataCode
       });
     }
@@ -1181,7 +1198,7 @@ function validateAgtSegment(lines: string[], issues: ValidationIssue[], segment:
       segment: 'AGT',
       field: 'iataCode',
       message: 'Falta código IATA del agente',
-      rule: 'AGT: Código IATA 7 dígitos obligatorio',
+      rule: 'AGT: Código IATA 7 dígitos obligatorio [FNA: AGT0020]',
       suggestion: 'Formato: AGT//{IATA_CODE}/{CASS_CODE}'
     });
   }
@@ -1196,7 +1213,7 @@ function validateAgtSegment(lines: string[], issues: ValidationIssue[], segment:
         segment: 'AGT',
         field: 'cassCode',
         message: `Código CASS del agente debe ser exactamente 4 dígitos. Encontrado: ${cassCode.length} dígito(s)`,
-        rule: 'AGT: Código CASS 4[n]',
+        rule: 'AGT: Código CASS 4[n] [FNA: AGT0025]',
         expected: '4 dígitos (ej: 0001)',
         found: cassCode
       });
@@ -1207,7 +1224,7 @@ function validateAgtSegment(lines: string[], issues: ValidationIssue[], segment:
       segment: 'AGT',
       field: 'cassCode',
       message: 'Falta código CASS del agente (4 dígitos después del código IATA)',
-      rule: 'AGT: Formato AGT//IATA/CASS',
+      rule: 'AGT: Formato AGT//IATA/CASS [FNA: AGT0025]',
       suggestion: 'Agregar código CASS de 4 dígitos: AGT//{IATA}/{CASS}'
     });
   }
@@ -1220,7 +1237,7 @@ function validateAgtSegment(lines: string[], issues: ValidationIssue[], segment:
       segment: 'AGT',
       field: 'name',
       message: 'Falta nombre del agente (línea 2 del segmento AGT)',
-      rule: 'AGT: Nombre obligatorio, hasta 35[t]'
+      rule: 'AGT: Nombre obligatorio, hasta 35[t] [FNA: AGT0035]'
     });
   } else {
     const name = agtLines[1].replace(/^\//, '').trim();
@@ -1319,7 +1336,7 @@ function validateCvdSegment(
       severity: 'error',
       segment: 'CVD',
       message: 'Segmento CVD está vacío. Es OBLIGATORIO.',
-      rule: 'CVD: Segmento requerido'
+      rule: 'CVD: Segmento requerido [FNA: CVD0010]'
     });
     return;
   }
@@ -1334,45 +1351,66 @@ function validateCvdSegment(
     return;
   }
 
-  // Formato: CVD/USD//PP/NVD/NCV/XXX
+  // Formato FWB: CVD/USD//PP/NVD/NCV/XXX  (doble barra → parts[1] vacío)
+  // Formato FHL: CVD/USD/PP/NVD/NCV/XXX  (sin doble barra → parts[1] = PP)
   const parts = content.replace('CVD/', '').split('/');
   
+  // Detectar si es formato FHL (sin doble-barra) o FWB (con doble-barra)
+  // Si parts[1] está vacío, es FWB (tenía "//"); si no, es FHL
+  const isFhlFormat = parts.length >= 2 && parts[1].trim() !== '';
+  
+  // Normalizar a un esquema común:
+  //   currency, pcCode, declCarriage, declCustoms, insurance
+  let currency: string;
+  let pcCode: string;
+  let declCarriage: string | undefined;
+  let declCustoms: string | undefined;
+  let insurance: string | undefined;
+  
+  if (isFhlFormat) {
+    // FHL: CVD/USD/PP/NVD/NCV/XXX → parts = [USD, PP, NVD, NCV, XXX]
+    currency      = (parts[0] || '').trim();
+    pcCode        = (parts[1] || '').trim();
+    declCarriage  = parts[2]?.trim();
+    declCustoms   = parts[3]?.trim();
+    insurance     = parts[4]?.trim();
+  } else {
+    // FWB: CVD/USD//PP/NVD/NCV/XXX → parts = [USD, '', PP, NVD, NCV, XXX]
+    currency      = (parts[0] || '').trim();
+    pcCode        = (parts[2] || '').trim();
+    declCarriage  = parts[3]?.trim();
+    declCustoms   = parts[4]?.trim();
+    insurance     = parts[5]?.trim();
+  }
+  
   // Validar moneda (3 letras)
-  if (parts.length >= 1) {
-    const currency = parts[0].trim();
-    if (!ISO_CURRENCY.test(currency)) {
-      issues.push({
-        severity: 'error',
-        segment: 'CVD',
-        field: 'currency',
-        message: `Código de moneda "${currency}" no es válido (debe ser 3 letras ISO)`,
-        rule: 'CVD [12]: Código de moneda 3[a]',
-        expected: 'Ej: USD, EUR, COP',
-        found: currency
-      });
-    }
+  if (!ISO_CURRENCY.test(currency)) {
+    issues.push({
+      severity: 'error',
+      segment: 'CVD',
+      field: 'currency',
+      message: `Código de moneda "${currency}" no es válido (debe ser 3 letras ISO)`,
+      rule: 'CVD [12]: Código de moneda 3[a] [FNA: CVD0015]',
+      expected: 'Ej: USD, EUR, COP',
+      found: currency
+    });
   }
 
-  // Validar WT/OT (después del //)
-  // parts[1] está vacío (por el //), parts[2] es WT_OT
-  if (parts.length >= 3) {
-    const wtOt = parts[2].trim();
-    if (!WTOT_CODES.includes(wtOt)) {
-      issues.push({
-        severity: 'error',
-        segment: 'CVD',
-        field: 'wtOt',
-        message: `Código WT/OT "${wtOt}" no es válido`,
-        rule: 'CVD: WT/OT debe ser PP, CC, PC o CP',
-        expected: 'PP (Prepaid), CC (Collect), PC (Weight Prepaid/Other Collect), CP (Weight Collect/Other Prepaid)',
-        found: wtOt
-      });
-    }
+  // Validar código P/C (Prepaid/Collect)
+  if (pcCode && !WTOT_CODES.includes(pcCode)) {
+    issues.push({
+      severity: 'error',
+      segment: 'CVD',
+      field: 'wtOt',
+      message: `Código de cargo "${pcCode}" no es válido`,
+      rule: 'CVD: P/C debe ser PP, CC, PC o CP [FNA: CVD0020/CVD0025]',
+      expected: 'PP (Prepaid), CC (Collect), PC (Weight Prepaid/Other Collect), CP (Weight Collect/Other Prepaid)',
+      found: pcCode
+    });
   }
 
   // Validar valor para Transporte
-  if (parts.length >= 4) {
-    const declCarriage = parts[3].trim();
+  if (declCarriage !== undefined && declCarriage !== '') {
     if (declCarriage !== 'NVD') {
       if (declCarriage.length > 12) {
         issues.push({
@@ -1380,7 +1418,7 @@ function validateCvdSegment(
           segment: 'CVD',
           field: 'declaredCarriage',
           message: `Valor para transporte excede 12 caracteres`,
-          rule: 'CVD [16]: Valor para transporte hasta 12[m] (o NVD)',
+          rule: 'CVD [16]: Valor para transporte hasta 12[m] (o NVD) [FNA: CVD0035]',
           found: declCarriage
         });
       }
@@ -1390,7 +1428,7 @@ function validateCvdSegment(
           segment: 'CVD',
           field: 'declaredCarriage',
           message: `Valor para transporte "${declCarriage}" no es numérico ni NVD`,
-          rule: 'CVD [16]: Hasta 12[m] o NVD',
+          rule: 'CVD [16]: Hasta 12[m] o NVD [FNA: CVD0035]',
           found: declCarriage,
           suggestion: 'Usar NVD (No Value Declared) o un valor numérico'
         });
@@ -1399,8 +1437,7 @@ function validateCvdSegment(
   }
 
   // Validar valor para Aduanas
-  if (parts.length >= 5) {
-    const declCustoms = parts[4].trim();
+  if (declCustoms !== undefined && declCustoms !== '') {
     if (declCustoms !== 'NCV') {
       if (declCustoms.length > 12) {
         issues.push({
@@ -1408,35 +1445,33 @@ function validateCvdSegment(
           segment: 'CVD',
           field: 'declaredCustoms',
           message: `Valor para aduanas excede 12 caracteres`,
-          rule: 'CVD [17]: Valor para aduanas hasta 12[m] (o NCV)',
+          rule: 'CVD [17]: Valor para aduanas hasta 12[m] (o NCV) [FNA: CVD0040]',
           found: declCustoms
         });
       }
     }
   }
 
-  // Validar campo de seguro (5to campo: XXX normalmente)
-  if (parts.length >= 6) {
-    const insurance = parts[5]?.trim();
-    if (insurance && insurance !== 'XXX' && insurance.length > 3) {
+  // Validar campo de seguro
+  if (insurance !== undefined && insurance !== '') {
+    if (insurance !== 'XXX' && insurance.length > 3) {
       issues.push({
         severity: 'warning',
         segment: 'CVD',
         field: 'insurance',
         message: `Valor de seguro "${insurance}" excede 3 caracteres. Normalmente se usa XXX (sin seguro declarado)`,
-        rule: 'CVD: Seguro a[3] — normalmente XXX',
+        rule: 'CVD: Seguro a[3] — normalmente XXX [FNA: CVD0045]',
         found: insurance,
         suggestion: 'Usar XXX si no se declara seguro'
       });
     }
-  } else if (parts.length >= 5) {
-    // Solo tiene 5 partes (currency, empty, wtot, carriage, customs) — falta insurance
+  } else {
     issues.push({
       severity: 'info',
       segment: 'CVD',
       field: 'insurance',
-      message: 'Falta campo de seguro (6to campo). Normalmente se coloca XXX (sin valor declarado para seguro).',
-      rule: 'CVD: Formato completo CVD/USD//PP/NVD/NCV/XXX',
+      message: 'Falta campo de seguro. Normalmente se coloca XXX (sin valor declarado para seguro).',
+      rule: 'CVD: Formato completo CVD/CUR/PC/NVD/NCV/XXX',
       suggestion: 'Agregar /XXX al final del CVD'
     });
   }
@@ -1586,7 +1621,7 @@ function validateRtdSegment(lines: string[], issues: ValidationIssue[], segment:
 /**
  * NG: Nature of Goods
  */
-function validateNgSegment(lines: string[], issues: ValidationIssue[], segment: GeneratedSegment): void {
+function validateNgSegment(lines: string[], issues: ValidationIssue[], segment: GeneratedSegment, message?: GeneratedCargoImpMessage): void {
   const content = segment.content;
   
   if (!content || content.trim() === '') {
@@ -1633,30 +1668,63 @@ function validateNgSegment(lines: string[], issues: ValidationIssue[], segment: 
     });
   }
 
-  // ACAS/Risk Assessment: Alertar sobre descripciones vagas
+  // ACAS/Risk Assessment: Alertar sobre descripciones vagas (Sección 6 del manual)
   if (description.length > 0) {
-    const vagueWords = ['CONSOLIDATION', 'CONSOLIDATED', 'PARTS', 'GOODS', 'GENERAL', 'VARIOUS', 'MISC', 'MISCELLANEOUS', 'SAMPLES', 'PERSONAL EFFECTS', 'MERCHANDISE', 'CARGO', 'ITEMS', 'STUFF', 'THINGS'];
     const descUpper = description.toUpperCase().trim();
-    const isVague = vagueWords.some(w => descUpper === w || descUpper === w + 'S');
-    if (isVague) {
+
+    // Verificar contra la lista expandida de 70+ descripciones vagas
+    const isVagueExact = VAGUE_DESCRIPTIONS_EXACT.some(w => descUpper === w || descUpper === w + 'S');
+    // También verificar coincidencia parcial para descripciones compuestas (ej: "MISC PARTS AND GOODS")
+    const isVaguePartial = !isVagueExact && VAGUE_DESCRIPTIONS_EXACT.some(w => 
+      descUpper.includes(w) && descUpper.length <= w.length + 5
+    );
+
+    if (isVagueExact) {
       issues.push({
         severity: 'warning',
         segment: 'NG',
         field: 'description',
-        message: `⚠️ ACAS ALERTA: Descripción "${description}" es demasiado vaga. Descripciones genéricas como "Parts", "Consolidation" o "Goods" generan HOLDS en Risk Assessment (ACAS/PLACI).`,
-        rule: 'ACAS: Descripciones vagas causan retención en screening de seguridad',
+        message: `⚠️ ACAS ALERTA: Descripción "${description}" es demasiado vaga. Descripciones genéricas causan HOLDS en Risk Assessment (ACAS/PLACI). Sección 6 del manual lista ${VAGUE_DESCRIPTIONS_EXACT.length}+ términos prohibidos.`,
+        rule: 'ACAS Sección 6: Descripciones vagas causan retención en screening [FNA: NG-VAGUE]',
         found: description,
-        suggestion: 'Usar descripción específica. Ej: "AUTOMOTIVE BRAKE PADS" en vez de "PARTS", "TEXTILE GARMENTS" en vez de "GOODS"'
+        suggestion: 'Usar descripción específica del producto. Ej: "AUTOMOTIVE BRAKE PADS" en vez de "PARTS", "COTTON TEXTILE GARMENTS" en vez de "GOODS", "LITHIUM ION LAPTOP BATTERIES" en vez de "BATTERIES"'
+      });
+    } else if (isVaguePartial) {
+      issues.push({
+        severity: 'info',
+        segment: 'NG',
+        field: 'description',
+        message: `Descripción "${description}" podría ser considerada vaga. Verifique que sea lo suficientemente específica para ACAS/PLACI.`,
+        rule: 'ACAS Sección 6: Revisión de descripciones potencialmente vagas [FNA: NG-VAGUE]',
+        found: description,
+        suggestion: 'Considere agregar más detalle al producto: material, uso, forma, etc.'
       });
     }
-    // NC (Consolidation) en envío directo es sospechoso
-    if (ngMatch[1] === 'NC') {
+
+    // Detección de términos que disparan escrutinio DG (mercancías peligrosas)
+    const dgTermsFound = DG_SCRUTINY_TERMS.filter(t => descUpper.includes(t));
+    if (dgTermsFound.length > 0) {
+      issues.push({
+        severity: 'info',
+        segment: 'NG',
+        field: 'description',
+        message: `Descripción contiene término(s) de escrutinio DG: ${dgTermsFound.join(', ')}. Asegúrese de que el SPH y segmentos DG sean consistentes.`,
+        rule: 'DG Scrutiny: Términos que activan revisión adicional de mercancías peligrosas',
+        found: description,
+        suggestion: dgTermsFound.includes('LITHIUM') || dgTermsFound.includes('BATTERY') || dgTermsFound.includes('BATTERIES')
+          ? 'Si contiene baterías de litio, verificar SPH (ELI/ELM/RLI/RLM) y declaración DG según IATA DGR Sección II.'
+          : 'Verificar que SPH y documentación DG reflejen correctamente el contenido declarado.'
+      });
+    }
+
+    // NC (Consolidation) en envío directo es sospechoso — solo alertar si NO es consolidación
+    if (ngMatch[1] === 'NC' && !message?.isConsolidation) {
       issues.push({
         severity: 'warning',
         segment: 'NG',
         field: 'type',
-        message: 'Tipo NC (Consolidation goods) detectado. Si este es un envío DIRECTO (no consolidado), usar /NG/ en lugar de /NC/.',
-        rule: 'NG vs NC: NG = General Goods (directos), NC = Consolidation',
+        message: 'Tipo NC (Consolidation goods) detectado en envío DIRECTO. Usar /NG/ en lugar de /NC/.',
+        rule: 'NG vs NC: NG = General Goods (directos), NC = Consolidation [FNA: NG0010]',
         suggestion: 'Para envíos directos usar /NG/DESCRIPCION'
       });
     }
@@ -1830,7 +1898,7 @@ function validateOthSegment(lines: string[], issues: ValidationIssue[], segment:
           segment: 'OTH',
           line: idx + 1,
           message: `Línea OTH con formato inválido`,
-          rule: 'OTH: Formato OTH/P_o_C/Código/Monto',
+          rule: 'OTH: Formato OTH/P_o_C/Código/Monto [FNA: OTH0010]',
           found: line.substring(0, 40)
         });
       }
@@ -1845,7 +1913,7 @@ function validateOthSegment(lines: string[], issues: ValidationIssue[], segment:
         field: 'prepaidOrCollect',
         line: idx + 1,
         message: `Indicador debe ser P (Prepaid) o C (Collect): "${pcIndicator}"`,
-        rule: 'OTH: P=Prepaid, C=Collect',
+        rule: 'OTH: P=Prepaid, C=Collect [FNA: OTH0015]',
         found: pcIndicator
       });
     }
@@ -1888,7 +1956,7 @@ function validateChargeSummarySegment(
       segment: segCode,
       field: 'WT',
       message: `Falta identificador WT (Weight Charge) en ${segCode}. Spec: WT n[1-12]`,
-      rule: `${segCode}: WT (peso) obligatorio`,
+      rule: `${segCode}: WT (peso) obligatorio [FNA: ${segCode}0020]`,
       suggestion: `Agregar WT seguido del monto. Ej: ${segCode}/WT3194.24/OC778.00/CT3972.24`
     });
   }
@@ -1908,7 +1976,7 @@ function validateChargeSummarySegment(
       segment: segCode,
       field: 'CT',
       message: `Falta identificador CT (Cargo Total) en ${segCode}. Spec: CT n[1-12]`,
-      rule: `${segCode}: CT (total) obligatorio`,
+      rule: `${segCode}: CT (total) obligatorio [FNA: ${segCode}0045]`,
       suggestion: `Agregar CT seguido del total. Ej: CT3972.24`
     });
   }
@@ -1991,7 +2059,7 @@ function validateIsuSegment(lines: string[], issues: ValidationIssue[], segment:
       severity: 'error',
       segment: 'ISU',
       message: 'Segmento ISU está vacío. Es OBLIGATORIO.',
-      rule: 'ISU: Segmento requerido'
+      rule: 'ISU: Segmento requerido [FNA: ISU0010]'
     });
     return;
   }
@@ -2001,7 +2069,7 @@ function validateIsuSegment(lines: string[], issues: ValidationIssue[], segment:
       severity: 'error',
       segment: 'ISU',
       message: 'Segmento debe comenzar con "ISU/"',
-      rule: 'ISU: Tag obligatorio'
+      rule: 'ISU: Tag obligatorio [FNA: ISU0010]'
     });
     return;
   }
@@ -2017,7 +2085,7 @@ function validateIsuSegment(lines: string[], issues: ValidationIssue[], segment:
         segment: 'ISU',
         field: 'date',
         message: `Fecha "${date}" no tiene formato DDMMMYY`,
-        rule: 'ISU: Fecha DDMMMYY (7 chars)',
+        rule: 'ISU: Fecha DDMMMYY (7 chars) [FNA: ISU0015/ISU0020/ISU0025]',
         expected: 'Ej: 24JAN26',
         found: date
       });
@@ -2028,7 +2096,7 @@ function validateIsuSegment(lines: string[], issues: ValidationIssue[], segment:
       segment: 'ISU',
       field: 'date',
       message: 'Falta fecha de emisión',
-      rule: 'ISU: Fecha obligatoria'
+      rule: 'ISU: Fecha obligatoria [FNA: ISU0015]'
     });
   }
 
@@ -2041,7 +2109,7 @@ function validateIsuSegment(lines: string[], issues: ValidationIssue[], segment:
         segment: 'ISU',
         field: 'place',
         message: `Lugar de emisión excede 17 caracteres (tiene ${place.length})`,
-        rule: 'ISU: Lugar hasta 17[t]',
+        rule: 'ISU: Lugar hasta 17[t] [FNA: ISU0030]',
         found: place
       });
     }
@@ -2051,7 +2119,7 @@ function validateIsuSegment(lines: string[], issues: ValidationIssue[], segment:
       segment: 'ISU',
       field: 'place',
       message: 'Falta lugar de emisión',
-      rule: 'ISU: Lugar obligatorio'
+      rule: 'ISU: Lugar obligatorio [FNA: ISU0030]'
     });
   }
 
@@ -2064,7 +2132,7 @@ function validateIsuSegment(lines: string[], issues: ValidationIssue[], segment:
         segment: 'ISU',
         field: 'signature',
         message: `Firma excede 20 caracteres`,
-        rule: 'ISU: Firma hasta 20[t]',
+        rule: 'ISU: Firma hasta 20[t] [FNA: ISU0035]',
         found: sig.substring(0, 25)
       });
     }
@@ -2082,7 +2150,7 @@ function validateRefSegment(lines: string[], issues: ValidationIssue[], segment:
       severity: 'error',
       segment: 'REF',
       message: 'Segmento REF está vacío. Es OBLIGATORIO.',
-      rule: 'REF: Referencia del agente requerida'
+      rule: 'REF: Referencia del agente requerida [FNA: REF0010]'
     });
     return;
   }
@@ -2221,7 +2289,7 @@ function validateOciSegment(lines: string[], issues: ValidationIssue[], segment:
         line: idx + 1,
         lineContent: line,
         message: `Línea OCI incompleta. Esperado: /País/Identificador/TipoControl/Información`,
-        rule: 'OCI: 4 campos obligatorios (País, Party, Type, Value)',
+        rule: 'OCI: 4 campos obligatorios (País, Party, Type, Value) [FNA: OCI0010]',
         found: line.substring(0, 40)
       });
       return;
@@ -2236,7 +2304,7 @@ function validateOciSegment(lines: string[], issues: ValidationIssue[], segment:
         field: 'country',
         line: idx + 1,
         message: `Código de país OCI "${country}" no es válido (debe ser 2 letras ISO)`,
-        rule: 'OCI: País 2[a]',
+        rule: 'OCI: País 2[a] [FNA: OCI0015]',
         found: country
       });
     }
@@ -2250,7 +2318,7 @@ function validateOciSegment(lines: string[], issues: ValidationIssue[], segment:
         field: 'party',
         line: idx + 1,
         message: `Identificador de información "${party}" no es estándar`,
-        rule: 'OCI: Identificador de información 3[a] (CNE, SHP, AGT)',
+        rule: 'OCI: Identificador de información 3[a] (CNE, SHP, AGT) [FNA: OCI0020]',
         expected: 'CNE, SHP, AGT, NFY',
         found: party
       });
@@ -2265,7 +2333,7 @@ function validateOciSegment(lines: string[], issues: ValidationIssue[], segment:
         field: 'type',
         line: idx + 1,
         message: `Identificador de control "${type}" no es estándar`,
-        rule: 'OCI: Identificador de control 1-2[a] (T, RA, CT, etc.)',
+        rule: 'OCI: Identificador de control 1-2[a] (T, RA, CT, etc.) [FNA: OCI0025]',
         found: type
       });
     }
@@ -2280,7 +2348,7 @@ function validateOciSegment(lines: string[], issues: ValidationIssue[], segment:
           field: 'value',
           line: idx + 1,
           message: `Información OCI excede 35 caracteres (tiene ${value.length})`,
-          rule: 'OCI: Información hasta 35[m]',
+          rule: 'OCI: Información hasta 35[m] [FNA: OCI0030]',
           found: value.substring(0, 40) + '...'
         });
       }
@@ -2576,10 +2644,15 @@ function validateHbsSegment(lines: string[], issues: ValidationIssue[], segment:
     return;
   }
 
-  // Formato esperado: HBS/HAWBNUMBER/OOODDD/Ppcs/Kwgt[/SLAC/DESC]
+  // Formato esperado (posicional):
+  //   HBS/HAWBNUMBER/OOODDD/pcs/Kwgt/SLAC/DESC
+  //   Índice: [0]=HAWB  [1]=ruta  [2]=piezas  [3]=peso  [4]=SLAC  [5+]=descripción
+  // Las piezas pueden ser:
+  //   - Número sin prefijo: "2"
+  //   - Con indicador P/T: "P2", "T2"
   const hbsParts = content.replace(/^HBS\/?/, '').split('/').filter(p => p !== '');
 
-  // HAWB number (max 12 alfanumérico)
+  // [0] HAWB number (max 12 alfanumérico)
   if (hbsParts.length >= 1) {
     const hawb = hbsParts[0].trim();
     if (hawb.length === 0) {
@@ -2602,7 +2675,7 @@ function validateHbsSegment(lines: string[], issues: ValidationIssue[], segment:
     }
   }
 
-  // Origen+Destino (6 letras: 3+3)
+  // [1] Origen+Destino (6 letras: 3+3)
   if (hbsParts.length >= 2) {
     const origDest = hbsParts[1].trim();
     if (origDest.length !== 6 || !ALPHA_ONLY.test(origDest)) {
@@ -2626,18 +2699,23 @@ function validateHbsSegment(lines: string[], issues: ValidationIssue[], segment:
     });
   }
 
-  // Piezas (P{n})
-  const piecePart = hbsParts.find(p => /^[PT]\d/.test(p));
-  if (piecePart) {
-    const pcs = piecePart.substring(1);
-    if (!NUMERIC_ONLY.test(pcs) || parseInt(pcs) <= 0) {
+  // [2] Piezas — puede ser número sin prefijo ("2") o con prefijo P/T ("P2","T2")
+  if (hbsParts.length >= 3) {
+    const rawPieces = hbsParts[2].trim();
+    let pcsValue: string;
+    if (/^[PT]/i.test(rawPieces)) {
+      pcsValue = rawPieces.substring(1);
+    } else {
+      pcsValue = rawPieces;
+    }
+    if (!NUMERIC_ONLY.test(pcsValue) || parseInt(pcsValue) <= 0) {
       issues.push({
         severity: 'error',
         segment: 'HBS',
         field: 'pieces',
-        message: `Piezas "${pcs}" inválidas (debe ser número > 0)`,
+        message: `Piezas "${rawPieces}" inválidas (debe ser número > 0)`,
         rule: 'HBS: Piezas numéricas > 0',
-        found: pcs
+        found: rawPieces
       });
     }
   } else {
@@ -2645,23 +2723,35 @@ function validateHbsSegment(lines: string[], issues: ValidationIssue[], segment:
       severity: 'error',
       segment: 'HBS',
       field: 'pieces',
-      message: 'Faltan piezas en HBS (indicador P o T seguido de cantidad)',
+      message: 'Faltan piezas en HBS',
       rule: 'HBS: Piezas obligatorias'
     });
   }
 
-  // Peso (K{n.n})
-  const weightPart = hbsParts.find(p => /^[KL][\d.]/.test(p));
-  if (weightPart) {
-    const wgt = weightPart.substring(1);
-    if (!WEIGHT_PATTERN.test(wgt) || parseFloat(wgt) <= 0) {
+  // [3] Peso (K{n.n} o L{n.n})
+  if (hbsParts.length >= 4) {
+    const rawWeight = hbsParts[3].trim();
+    if (/^[KL]/i.test(rawWeight)) {
+      const wgt = rawWeight.substring(1);
+      if (!WEIGHT_PATTERN.test(wgt) || parseFloat(wgt) <= 0) {
+        issues.push({
+          severity: 'error',
+          segment: 'HBS',
+          field: 'weight',
+          message: `Peso "${wgt}" inválido (debe ser número > 0)`,
+          rule: 'HBS: Peso numérico > 0',
+          found: wgt
+        });
+      }
+    } else {
       issues.push({
         severity: 'error',
         segment: 'HBS',
         field: 'weight',
-        message: `Peso "${wgt}" inválido (debe ser número > 0)`,
-        rule: 'HBS: Peso numérico > 0',
-        found: wgt
+        message: `Peso "${rawWeight}" no tiene indicador de unidad (K=kg, L=lb)`,
+        rule: 'HBS: Indicador de peso K o L obligatorio',
+        found: rawWeight,
+        expected: 'Ej: K13.0, L28.6'
       });
     }
   } else {
@@ -2669,28 +2759,35 @@ function validateHbsSegment(lines: string[], issues: ValidationIssue[], segment:
       severity: 'error',
       segment: 'HBS',
       field: 'weight',
-      message: 'Falta peso en HBS (indicador K o L seguido de peso)',
+      message: 'Falta peso en HBS',
       rule: 'HBS: Peso obligatorio'
     });
   }
 
-  // SLAC (n[1-4]) — Shipper's Load and Count
-  // Buscar una parte numérica que no sea piezas ni peso ni HAWB
-  const slacPart = hbsParts.find(p => 
-    p && 
-    NUMERIC_ONLY.test(p) && 
-    !/^[PT]/.test(p) && // No es piezas (P/T prefix)
-    hbsParts.indexOf(p) > 2 // Después de HAWB, ruta, y piezas
-  );
-  if (slacPart) {
-    if (slacPart.length > 4) {
+  // [4] SLAC (n[1-4]) — Shipper's Load and Count
+  if (hbsParts.length >= 5) {
+    const slacPart = hbsParts[4].trim();
+    if (NUMERIC_ONLY.test(slacPart)) {
+      if (slacPart.length > 4) {
+        issues.push({
+          severity: 'warning',
+          segment: 'HBS',
+          field: 'slac',
+          message: `SLAC "${slacPart}" excede 4 dígitos (máximo n[1-4])`,
+          rule: 'HBS: SLAC hasta 4 dígitos numéricos',
+          found: slacPart
+        });
+      }
+      // SLAC válido, no emitir info
+    } else {
+      // Posición 4 no es numérica — podría ser descripción sin SLAC
       issues.push({
-        severity: 'warning',
+        severity: 'info',
         segment: 'HBS',
         field: 'slac',
-        message: `SLAC "${slacPart}" excede 4 dígitos (máximo n[1-4])`,
-        rule: 'HBS: SLAC hasta 4 dígitos numéricos',
-        found: slacPart
+        message: 'No se detectó SLAC (Shipper Load And Count) en HBS. Aduanas puede requerirlo (n[1-4]).',
+        rule: 'HBS: SLAC recomendado (n[1-4])',
+        suggestion: 'Agregar cantidad SLAC después del peso en la línea HBS'
       });
     }
   } else {
@@ -2704,28 +2801,20 @@ function validateHbsSegment(lines: string[], issues: ValidationIssue[], segment:
     });
   }
 
-  // Descripción de mercancía (a[1-15]) — spec: campo obligatorio para aduanas
-  // Buscar la parte que no sea código HBS, ruta, piezas, peso ni SLAC
-  const descPart = hbsParts.find(p => 
-    p && 
-    !/^\d/.test(p) && // No empieza con números (no es HBS ID numérico ni SLAC)
-    !/^[A-Z]{3}[A-Z]{3}$/.test(p) && // No es ruta (ORGDST 6 letras)
-    !/^[A-Z]{6}$/.test(p) && // No es ruta alternativa
-    !/^[PT]\d/.test(p) && // No es piezas
-    !/^[KL][\d.]/.test(p) && // No es peso
-    p.length <= 15 &&
-    /^[A-Za-z]/.test(p) // Empieza con letra
-  );
+  // [5+] Descripción de mercancía — todo después del SLAC
+  const descIndex = hbsParts.length >= 5 && NUMERIC_ONLY.test(hbsParts[4]?.trim()) ? 5 : 4;
+  const descParts = hbsParts.slice(descIndex);
+  const descText = descParts.join('/').trim();
   
-  if (descPart) {
-    if (descPart.length > 15) {
+  if (descText) {
+    if (descText.length > 20) {
       issues.push({
         severity: 'warning',
         segment: 'HBS',
         field: 'description',
-        message: `Descripción "${descPart}" excede 15 caracteres (máximo a[1-15])`,
-        rule: 'HBS: Descripción hasta 15 caracteres alfabéticos',
-        found: descPart
+        message: `Descripción "${descText}" es larga (${descText.length} chars). En HBS se recomienda breve; detalles van en TXT.`,
+        rule: 'HBS: Descripción breve recomendada',
+        found: descText
       });
     }
   } else {
@@ -2733,8 +2822,8 @@ function validateHbsSegment(lines: string[], issues: ValidationIssue[], segment:
       severity: 'info',
       segment: 'HBS',
       field: 'description',
-      message: 'No se detectó descripción de mercancía en HBS. Aduanas puede requerir descripción (a[1-15]).',
-      rule: 'HBS: Descripción recomendada para customs (a[1-15])',
+      message: 'No se detectó descripción de mercancía en HBS. Aduanas puede requerir descripción.',
+      rule: 'HBS: Descripción recomendada para customs',
       suggestion: 'Agregar descripción breve de la mercancía al final de la línea HBS'
     });
   }
@@ -2815,6 +2904,46 @@ function validateTxtSegment(lines: string[], issues: ValidationIssue[], segment:
 }
 
 // ============================================================
+// LISTA EXTENDIDA DE DESCRIPCIONES VAGAS (Sección 6 del Manual)
+// Términos que causan ACAS hold / DNL / rechazo aduanero
+// ============================================================
+
+const VAGUE_DESCRIPTIONS_EXACT: string[] = [
+  'CONSOLIDATION', 'CONSOLIDATED', 'PARTS', 'GOODS', 'GENERAL', 'VARIOUS',
+  'MISC', 'MISCELLANEOUS', 'SAMPLES', 'PERSONAL EFFECTS', 'MERCHANDISE',
+  'CARGO', 'ITEMS', 'STUFF', 'THINGS',
+  // Ampliación según Sección 6 del manual
+  'SPARE PARTS', 'MACHINE PARTS', 'AUTO PARTS', 'AUTO', 'AUTOMOBILES',
+  'EQUIPMENT', 'INDUSTRIAL EQUIPMENT', 'ELECTRONICS', 'ELECTRONIC GOODS',
+  'CONSUMER GOODS', 'GENERAL MERCHANDISE', 'HOUSEHOLD GOODS',
+  'GIFTS', 'NOVELTY ITEMS', 'MACHINERY', 'MACHINES', 'TOOLS',
+  'ACCESSORIES', 'HARDWARE', 'SOFTWARE', 'CHEMICALS', 'MATERIALS',
+  'DOCUMENTS', 'DOCS', 'DOX', 'FOODSTUFF', 'FOOD', 'MEAT', 'FISH', 'SNACKS',
+  'CLOTHING', 'GARMENTS', 'APPAREL', 'WEARING APPAREL',
+  'FAK', 'SAID TO CONTAIN', 'AS PER INVOICE', 'AS PER ATTACHED',
+  'REFER TO ATTACHED', 'AS ORDERED', 'ANIMALS', 'APPLIANCES',
+  'CLEANING PRODUCTS', 'CRAFTS', 'HANDICRAFTS', 'FLOORING',
+  'IRON AND STEEL', 'METAL', 'LEATHER ARTICLES',
+  'MEDICAL SUPPLIES', 'BIOLOGICALS', 'MEDICATION', 'PHARMACEUTICALS',
+  'OIL', 'ONLINE RETAILER', 'ONLINE RETAILER SHIPMENT',
+  'PACKAGING', 'BOXES', 'CARTONS', 'PAPER', 'PLANTS', 'FLOWERS', 'CUTTINGS',
+  'PLASTIC GOODS', 'INDUSTRIAL PLASTICS', 'POWDER',
+  'RUBBER ARTICLES', 'SCRAP', 'SPORTING GOODS',
+  'STATIONERY', 'DIDACTIC ARTICLES', 'STEEL',
+  'SUPPLEMENTS', 'SUPPLIES', 'PROMOTIONAL ITEMS',
+  'TEXTILES', 'TILES', 'TOILETRIES', 'BATHROOM PRODUCTS', 'SANITARY GOODS',
+  'TOYS', 'GAMES', 'VEHICLES', 'WIRES', 'WOOD',
+  'BAZAAR GOODS', 'CAPS'
+];
+
+/** Términos que disparan revisión adicional (no rechazo, sí escrutinio DG) */
+const DG_SCRUTINY_TERMS: string[] = [
+  'LITHIUM', 'BATTERY', 'BATTERIES', 'POWDER', 'LIQUID', 'AEROSOL',
+  'MAGNETIC', 'GAS', 'RADIOACTIVE', 'VACCINE', 'DUAL USE',
+  'AMMUNITION', 'WEAPON', 'EXPLOSIVE'
+];
+
+// ============================================================
 // VALIDACIONES GLOBALES
 // ============================================================
 
@@ -2835,7 +2964,7 @@ function validateGlobalRules(
           severity: 'error',
           segment: 'GLOBAL',
           message: `Falta segmento OBLIGATORIO: ${seg}`,
-          rule: `FWB: Segmento ${seg} es requerido por IATA`,
+          rule: `FWB: Segmento ${seg} es requerido por IATA [FNA: ${seg}0010]`,
           suggestion: `Habilitar el segmento ${seg}`
         });
       }
@@ -2848,7 +2977,7 @@ function validateGlobalRules(
           severity: 'error',
           segment: seg.code,
           message: `Segmento ${seg.code} (${seg.name}) está habilitado pero vacío. Es obligatorio.`,
-          rule: `${seg.code}: Contenido obligatorio`
+          rule: `${seg.code}: Contenido obligatorio [FNA: ${seg.code}0010]`
         });
       }
     });
@@ -2863,9 +2992,64 @@ function validateGlobalRules(
           segment: 'GLOBAL',
           field: 'awbNumber',
           message: `Número AWB "${message.awbNumber}" no tiene 11 dígitos (3 prefijo + 8 serial)`,
-          rule: 'AWB IATA: 11 dígitos (3 airline prefix + 8 serial)',
+          rule: 'AWB IATA: 11 dígitos (3 airline prefix + 8 serial) [FNA: AWB0020]',
           found: awbClean,
           expected: '11 dígitos'
+        });
+      }
+    }
+
+    // ===========================================================
+    // VALIDACIÓN AWB destino == último RTG destino
+    // ===========================================================
+    const awbContent = enabledSegments.find(s => s.code === 'AWB')?.content || '';
+    const rtgContent = enabledSegments.find(s => s.code === 'RTG')?.content || '';
+    const awbDestMatch = awbContent.match(/[A-Z]{3}([A-Z]{3})\/T/);
+    if (awbDestMatch && rtgContent) {
+      const awbDest = awbDestMatch[1];
+      const rtgParts = rtgContent.replace('RTG', '').split('/').filter(p => p.trim());
+      if (rtgParts.length > 0) {
+        const lastRtg = rtgParts[rtgParts.length - 1].trim();
+        const lastRtgAirport = lastRtg.substring(0, 3);
+        if (lastRtgAirport && IATA_AIRPORT.test(lastRtgAirport) && lastRtgAirport !== awbDest) {
+          issues.push({
+            severity: 'error',
+            segment: 'GLOBAL',
+            field: 'rtg_awb_mismatch',
+            message: `Destino AWB "${awbDest}" no coincide con último punto RTG "${lastRtgAirport}"`,
+            rule: 'RTG: El último destino del RTG debe coincidir con el destino del AWB [FNA: AWB9040]',
+            found: `AWB dest: ${awbDest}, RTG último: ${lastRtgAirport}`,
+            suggestion: 'Corregir el RTG para que termine en el destino del AWB'
+          });
+        }
+      }
+    }
+
+    // ===========================================================
+    // VALIDACIONES POR PAÍS DE DESTINO (Sección 5 del Manual)
+    // ===========================================================
+    const destinationCode = extractDestinationAirport(enabledSegments);
+    const destinationCountry = getCountryFromAirport(destinationCode);
+    if (destinationCountry) {
+      const countryIssues = validateCountrySpecificRules(
+        destinationCountry, destinationCode, enabledSegments, message
+      );
+      issues.push(...countryIssues);
+    }
+
+    // ===========================================================
+    // VALIDACIÓN: FWB consolidación debe usar /NC no /NG
+    // ===========================================================
+    const isConsolidation = !!message.isConsolidation || !!message.hawbNumber || enabledSegments.some(s => s.content?.includes('/NC/'));
+    if (isConsolidation) {
+      const ngSeg = enabledSegments.find(s => s.code === 'NG');
+      if (ngSeg && ngSeg.content.includes('/NG/')) {
+        issues.push({
+          severity: 'error',
+          segment: 'NG',
+          message: 'FWB master de consolidación debería usar /NC/ (Nature-Consolidation) en vez de /NG/ (Nature-General)',
+          rule: 'RTD: /NC para consolidaciones, /NG para directos (§9.5.3)',
+          suggestion: 'Cambiar /NG/ por /NC/ y agregar "CONSOLIDATION AS PER ATTACHED MANIFEST"'
         });
       }
     }
@@ -2884,9 +3068,1235 @@ function validateGlobalRules(
         });
       }
     });
+
+    // ===========================================================
+    // VALIDACIÓN CRUZADA FWB ↔ FHL: piezas y peso
+    // NOTA: Solo tiene sentido cuando hay MÚLTIPLES HBS en el mismo mensaje.
+    // En FHL individuales (1 house por mensaje) siempre diferirá del master.
+    // ===========================================================
+    const mbiSeg = enabledSegments.find(s => s.code === 'MBI');
+    const hbsSegs = enabledSegments.filter(s => s.code === 'HBS');
+    if (mbiSeg && hbsSegs.length > 1) {
+      // Extraer totales del MBI
+      const mbiPiecesMatch = mbiSeg.content.match(/\/T(\d+)/);
+      const mbiWeightMatch = mbiSeg.content.match(/[KL]([\d.]+)/);
+      const mbiTotalPieces = mbiPiecesMatch ? parseInt(mbiPiecesMatch[1]) : 0;
+      const mbiTotalWeight = mbiWeightMatch ? parseFloat(mbiWeightMatch[1]) : 0;
+
+      // Sumar piezas y peso de todos los HBS
+      let hbsTotalPieces = 0;
+      let hbsTotalWeight = 0;
+      for (const hbs of hbsSegs) {
+        const hbsPiecesMatch = hbs.content.match(/[PT](\d+)/);
+        const hbsWeightMatch = hbs.content.match(/[KL]([\d.]+)/);
+        if (hbsPiecesMatch) hbsTotalPieces += parseInt(hbsPiecesMatch[1]);
+        if (hbsWeightMatch) hbsTotalWeight += parseFloat(hbsWeightMatch[1]);
+      }
+
+      // Verificar piezas (tolerancia = 0)
+      if (mbiTotalPieces > 0 && hbsTotalPieces > 0 && mbiTotalPieces !== hbsTotalPieces) {
+        issues.push({
+          severity: 'error',
+          segment: 'GLOBAL',
+          field: 'crossValidation_pieces',
+          message: `Total piezas MBI (${mbiTotalPieces}) ≠ suma piezas HBS (${hbsTotalPieces})`,
+          rule: 'FHL §9.5.3: Suma de piezas de todos los HBS debe = total del master MBI [FNA: AWB9070]',
+          expected: `${mbiTotalPieces} piezas`,
+          found: `${hbsTotalPieces} piezas (${hbsSegs.length} houses)`
+        });
+      }
+
+      // Verificar peso (tolerancia ±2%)
+      if (mbiTotalWeight > 0 && hbsTotalWeight > 0) {
+        const weightDiff = Math.abs(mbiTotalWeight - hbsTotalWeight);
+        const weightTolerance = mbiTotalWeight * 0.02;
+        if (weightDiff > weightTolerance) {
+          issues.push({
+            severity: 'error',
+            segment: 'GLOBAL',
+            field: 'crossValidation_weight',
+            message: `Peso MBI (${mbiTotalWeight} kg) difiere de suma HBS (${hbsTotalWeight.toFixed(1)} kg) por ${weightDiff.toFixed(1)} kg (> 2% tolerancia)`,
+            rule: 'FHL §9.5.3: Suma peso HBS ≈ total MBI (tolerancia ±2%) [FNA: AWB9070]',
+            expected: `${mbiTotalWeight} kg ± ${weightTolerance.toFixed(1)}`,
+            found: `${hbsTotalWeight.toFixed(1)} kg`
+          });
+        }
+      }
+    }
+
+    // ===========================================================
+    // VALIDACIONES POR PAÍS DE DESTINO en FHL
+    // ===========================================================
+    const hbsSegsForDest = enabledSegments.filter(s => s.code === 'HBS');
+    for (const hbs of hbsSegsForDest) {
+      const hbsDestMatch = hbs.content.match(/[A-Z]{3}([A-Z]{3})/);
+      if (hbsDestMatch) {
+        const hbsDestAirport = hbsDestMatch[1];
+        const hbsDestCountry = getCountryFromAirport(hbsDestAirport);
+        if (hbsDestCountry) {
+          const countryIssues = validateCountrySpecificRules(
+            hbsDestCountry, hbsDestAirport, enabledSegments, message
+          );
+          issues.push(...countryIssues);
+        }
+      }
+    }
   }
 
   return issues;
+}
+
+// ============================================================
+// HELPER: Extraer aeropuerto destino del AWB
+// ============================================================
+
+function extractDestinationAirport(enabledSegments: GeneratedSegment[]): string {
+  const awbSeg = enabledSegments.find(s => s.code === 'AWB');
+  if (!awbSeg) return '';
+  const match = awbSeg.content.match(/[A-Z]{3}([A-Z]{3})\/T/);
+  return match ? match[1] : '';
+}
+
+// ============================================================
+// MAPEO AEROPUERTO → CÓDIGO PAÍS (principales aeropuertos)
+// ============================================================
+
+function getCountryFromAirport(airportCode: string): string {
+  const airportCountryMap: Record<string, string> = {
+    // Egipto
+    'CAI': 'EG', 'HRG': 'EG', 'SSH': 'EG', 'LXR': 'EG', 'ALY': 'EG',
+    // Indonesia
+    'CGK': 'ID', 'DPS': 'ID', 'SUB': 'ID', 'JOG': 'ID', 'BPN': 'ID', 'UPG': 'ID',
+    // UAE
+    'DXB': 'AE', 'AUH': 'AE', 'SHJ': 'AE', 'RKT': 'AE',
+    // Bangladesh
+    'DAC': 'BD', 'CGP': 'BD', 'ZYL': 'BD',
+    // Sri Lanka
+    'CMB': 'LK', 'HRI': 'LK',
+    // Marruecos
+    'CMN': 'MA', 'RBA': 'MA', 'RAK': 'MA', 'FEZ': 'MA', 'TNG': 'MA',
+    // Turquía
+    'IST': 'TR', 'SAW': 'TR', 'ESB': 'TR', 'ADB': 'TR', 'AYT': 'TR',
+    // Jordania
+    'AMM': 'JO', 'AQJ': 'JO',
+    // Kenia
+    'NBO': 'KE', 'MBA': 'KE',
+    // USA
+    'JFK': 'US', 'LAX': 'US', 'ORD': 'US', 'MIA': 'US', 'ATL': 'US', 'DFW': 'US',
+    'SFO': 'US', 'EWR': 'US', 'IAD': 'US', 'IAH': 'US', 'BOS': 'US', 'SEA': 'US',
+    'MSP': 'US', 'DTW': 'US', 'PHL': 'US', 'CLT': 'US', 'DEN': 'US', 'PHX': 'US',
+    'MCO': 'US', 'FLL': 'US', 'TPA': 'US', 'SAN': 'US', 'CVG': 'US', 'MEM': 'US',
+    'SDF': 'US', 'ANC': 'US', 'HNL': 'US',
+    // Canadá
+    'YYZ': 'CA', 'YVR': 'CA', 'YUL': 'CA', 'YOW': 'CA', 'YEG': 'CA', 'YYC': 'CA',
+    'YWG': 'CA', 'YHZ': 'CA',
+    // EU principales
+    'FRA': 'DE', 'MUC': 'DE', 'HAM': 'DE', 'CGN': 'DE', 'DUS': 'DE', 'BER': 'DE',
+    'CDG': 'FR', 'ORY': 'FR', 'NCE': 'FR', 'LYS': 'FR',
+    'AMS': 'NL', 'RTM': 'NL',
+    'BRU': 'BE', 'LGG': 'BE',
+    'MAD': 'ES', 'BCN': 'ES', 'ZAZ': 'ES',
+    'FCO': 'IT', 'MXP': 'IT', 'LIN': 'IT',
+    'LIS': 'PT', 'OPO': 'PT',
+    'VIE': 'AT', 'ZRH': 'CH', 'GVA': 'CH',
+    'CPH': 'DK', 'OSL': 'NO', 'ARN': 'SE', 'HEL': 'FI',
+    'WAW': 'PL', 'PRG': 'CZ', 'BUD': 'HU', 'OTP': 'RO',
+    'ATH': 'GR', 'SOF': 'BG', 'ZAG': 'HR',
+    'DUB': 'IE', 'LUX': 'LU',
+    // UK
+    'LHR': 'GB', 'LGW': 'GB', 'MAN': 'GB', 'STN': 'GB', 'EDI': 'GB', 'BHX': 'GB',
+    'EMA': 'GB', 'BFS': 'GB',
+    // China
+    'PVG': 'CN', 'PEK': 'CN', 'CAN': 'CN', 'SZX': 'CN', 'CTU': 'CN', 'HKG': 'HK',
+    'XIY': 'CN', 'WUH': 'CN', 'NKG': 'CN', 'TSN': 'CN', 'CKG': 'CN',
+    // Arabia Saudita
+    'JED': 'SA', 'RUH': 'SA', 'DMM': 'SA',
+    // Otros
+    'SIN': 'SG', 'KUL': 'MY', 'BKK': 'TH', 'ICN': 'KR', 'NRT': 'JP', 'HND': 'JP',
+    'KIX': 'JP', 'DEL': 'IN', 'BOM': 'IN', 'MAA': 'IN', 'BLR': 'IN',
+    'GRU': 'BR', 'VCP': 'BR', 'GIG': 'BR',
+    'MEX': 'MX', 'GDL': 'MX',
+    'SYD': 'AU', 'MEL': 'AU', 'BNE': 'AU', 'PER': 'AU',
+    'AKL': 'NZ', 'CHC': 'NZ',
+    'JNB': 'ZA', 'CPT': 'ZA',
+    'LOS': 'NG', 'ABV': 'NG',
+    'TLV': 'IL', 'ISB': 'PK', 'KHI': 'PK', 'LHE': 'PK',
+    'BEY': 'LB', 'DOH': 'QA', 'BAH': 'BH', 'MCT': 'OM', 'KWI': 'KW',
+    // Colombia
+    'BOG': 'CO', 'MDE': 'CO', 'CLO': 'CO', 'CTG': 'CO', 'BAQ': 'CO',
+    // Ecuador
+    'UIO': 'EC', 'GYE': 'EC'
+  };
+  return airportCountryMap[airportCode] || '';
+}
+
+// Lista de países EU para validación ICS2/EORI
+const EU_COUNTRIES = [
+  'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR',
+  'DE', 'GR', 'HU', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL',
+  'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE'
+];
+
+// ============================================================
+// VALIDACIONES POR PAÍS DE DESTINO (Sección 5 del Manual)
+// ============================================================
+
+function validateCountrySpecificRules(
+  countryCode: string,
+  airportCode: string,
+  enabledSegments: GeneratedSegment[],
+  message: GeneratedCargoImpMessage
+): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const fullMessage = message.fullMessage || '';
+  const ociContent = enabledSegments.find(s => s.code === 'OCI')?.content || '';
+  const cvdContent = enabledSegments.find(s => s.code === 'CVD')?.content || '';
+  const cneContent = enabledSegments.find(s => s.code === 'CNE')?.content || '';
+  const sphContent = enabledSegments.find(s => s.code === 'SPH')?.content || '';
+  const rtdContent = enabledSegments.find(s => s.code === 'RTD')?.content || '';
+  const nhContent = enabledSegments.find(s => s.code === 'NH')?.content || '';
+  const hbsSegs = enabledSegments.filter(s => s.code === 'HBS');
+
+  // -----------------------------------------------------------
+  // EGIPTO (EG) — ACID + Enterprise Codes (Nafeza) §5.4
+  // -----------------------------------------------------------
+  if (countryCode === 'EG') {
+    // ACID Number obligatorio
+    const hasAcid = /OCI\/EG\/IMP\/M\/\d{19}/.test(ociContent) || /OCI\/EG\/IMP\/M\/\d{19}/.test(fullMessage);
+    if (!hasAcid) {
+      // En consolidaciones, ACID va en FHL no en FWB
+      const isConsoEG = !!message.hawbNumber || enabledSegments.some(s => s.content?.includes('/NC/'));
+      if (message.type === 'FHL' || !isConsoEG) {
+        issues.push({
+          severity: 'error',
+          segment: 'OCI',
+          field: 'ACID',
+          message: `EGIPTO: Falta ACID Number (19 dígitos) obligatorio para destino ${airportCode}. Sin ACID válido la carga será RECHAZADA.`,
+          rule: 'OCI §5.4: OCI/EG/IMP/M/<19 dígitos> obligatorio para Egipto [FNA: OCI-EG-001]',
+          suggestion: 'Agregar: OCI/EG/IMP/M/1234567890123456789 (19 dígitos del portal Nafeza)'
+        });
+      }
+    } else {
+      // Validar formato ACID: exactamente 19 dígitos
+      const acidMatch = ociContent.match(/OCI\/EG\/IMP\/M\/(\S+)/) || fullMessage.match(/OCI\/EG\/IMP\/M\/(\S+)/);
+      if (acidMatch) {
+        const acidValue = acidMatch[1];
+        if (!/^\d{19}$/.test(acidValue)) {
+          issues.push({
+            severity: 'error',
+            segment: 'OCI',
+            field: 'ACID',
+            message: `EGIPTO: ACID "${acidValue}" formato inválido. Debe ser exactamente 19 dígitos numéricos.`,
+            rule: 'OCI §5.4: ACID = 19 dígitos sin letras ni prefijo [FNA: OCI-EG-002]',
+            found: acidValue,
+            expected: '19 dígitos numéricos (ej: 1234567890123456789)'
+          });
+        }
+      }
+    }
+
+    // Enterprise Code CNE obligatorio
+    const hasCneEntCode = /OCI\/EG\/CNE\/T\//.test(ociContent) || /OCI\/EG\/CNE\/T\//.test(fullMessage);
+    if (!hasCneEntCode) {
+      issues.push({
+        severity: 'error',
+        segment: 'OCI',
+        field: 'enterpriseCode_CNE',
+        message: `EGIPTO: Falta Enterprise Code del Consignee para destino ${airportCode}`,
+        rule: 'OCI §5.4: OCI/EG/CNE/T/<enterprise_code> obligatorio [FNA: OCI-EG-004]',
+        suggestion: 'Agregar: OCI/EG/CNE/T/<Enterprise Code del consignee registrado en Nafeza>'
+      });
+    }
+
+    // Enterprise Code SHP obligatorio (desde enero 2026)
+    const hasShpEntCode = /OCI\/EG\/SHP\/T\//.test(ociContent) || /OCI\/EG\/SHP\/T\//.test(fullMessage);
+    if (!hasShpEntCode) {
+      issues.push({
+        severity: 'error',
+        segment: 'OCI',
+        field: 'enterpriseCode_SHP',
+        message: `EGIPTO: Falta Enterprise Code del Shipper para destino ${airportCode} (obligatorio desde enero 2026)`,
+        rule: 'OCI §5.4: OCI/EG/SHP/T/<enterprise_code> obligatorio [FNA: OCI-EG-005]',
+        suggestion: 'Agregar: OCI/EG/SHP/T/<Enterprise Code del shipper>'
+      });
+    }
+
+    // En consolidación, ACID NO debe ir en FWB master
+    const isConsoEG2 = !!message.hawbNumber || enabledSegments.some(s => s.content?.includes('/NC/'));
+    if (message.type === 'FWB' && isConsoEG2) {
+      const hasAcidInMaster = /OCI\/EG\/IMP\/M\//.test(ociContent);
+      if (hasAcidInMaster) {
+        issues.push({
+          severity: 'error',
+          segment: 'OCI',
+          field: 'ACID_master',
+          message: 'EGIPTO: ACID Number NO debe ir en FWB master de consolidación. Debe ir en cada FHL (house).',
+          rule: 'OCI §5.4: En consolidaciones ACID va a nivel house (FHL), no master [FNA: OCI-EG-007]',
+          suggestion: 'Mover OCI/EG/IMP/M/... al FHL de cada house'
+        });
+      }
+    }
+  }
+
+  // -----------------------------------------------------------
+  // INDONESIA (ID) — NPWP/TIN 16 dígitos §5.5
+  // -----------------------------------------------------------
+  if (countryCode === 'ID') {
+    const hasNpwp = /OCI\/ID\/CNE\/T\/(TIN|NPWP)\d{16}/.test(ociContent) || /OCI\/ID\/CNE\/T\/(TIN|NPWP)\d{16}/.test(fullMessage);
+    const hasNib = /OCI\/ID\/CNE\/T\/NIB\d{13}/.test(ociContent) || /OCI\/ID\/CNE\/T\/NIB\d{13}/.test(fullMessage);
+    if (!hasNpwp && !hasNib) {
+      issues.push({
+        severity: 'error',
+        segment: 'OCI',
+        field: 'NPWP',
+        message: `INDONESIA: Falta NPWP/TIN (16 dígitos) o NIB (13 dígitos) del consignee para destino ${airportCode}`,
+        rule: 'OCI §5.5: OCI/ID/CNE/T/TIN<16 dígitos> obligatorio para Indonesia [FNA: OCI-ID-001]',
+        suggestion: 'Agregar: OCI/ID/CNE/T/TIN0123451234512345 (16 dígitos sin separadores)'
+      });
+    }
+    // Detectar formato obsoleto (con puntos/guiones)
+    const oldFormat = /OCI\/ID\/T\/TN\/\d{2}\.\d{3}/.test(ociContent) || /OCI\/ID\/T\/TN\/\d{2}\.\d{3}/.test(fullMessage);
+    if (oldFormat) {
+      issues.push({
+        severity: 'error',
+        segment: 'OCI',
+        field: 'NPWP_format',
+        message: 'INDONESIA: Formato NPWP obsoleto detectado (con puntos/guiones). Usar 16 dígitos sin separadores con prefijo TIN o NPWP.',
+        rule: 'OCI §5.5: Formato 2026 = TIN + 16 dígitos [FNA: OCI-ID-002]',
+        suggestion: 'Cambiar a: OCI/ID/CNE/T/TIN<16 dígitos sin separadores>'
+      });
+    }
+  }
+
+  // -----------------------------------------------------------
+  // UAE (AE) — PLACI: HS Code + descripción estricta §5.6
+  // -----------------------------------------------------------
+  if (countryCode === 'AE') {
+    // HS Code obligatorio (6+ dígitos)
+    const hasHsCode = /\/NH\/\d{6}/.test(rtdContent) || /\/NH\/\d{6}/.test(nhContent) || /\/NH\/\d{6}/.test(fullMessage);
+    const hasHTS = hbsSegs.some(s => /\/T\d{6}/.test(s.content));
+    if (!hasHsCode && !hasHTS) {
+      issues.push({
+        severity: 'error',
+        segment: 'GLOBAL',
+        field: 'HS_UAE',
+        message: `UAE PLACI: Falta HS Code (mínimo 6 dígitos) obligatorio para destino ${airportCode}. Sin HS Code: DNL (Do Not Load).`,
+        rule: 'PLACI §5.6: HS Code 6+ dígitos obligatorio desde 29/Feb/2024 para UAE',
+        suggestion: 'Agregar código HS en RTD: /NH/060311 (6 dígitos mínimo)'
+      });
+    }
+
+    // Nombres de shipper/consignee deben ser del trader REAL (no forwarder)
+    const cneNameMatch = cneContent.match(/(?:\/NM|\/NAM\/|^CNE\n\/)(.*)/);
+    if (cneNameMatch) {
+      const cneName = cneNameMatch[1].replace(/^\//, '').trim().toUpperCase();
+      const placeholders = ['TBD', 'TBC', 'UNKNOWN', 'N/A', 'NA', 'NONE', 'TO ORDER', 'TO BE ADVISED'];
+      if (placeholders.some(p => cneName === p || cneName.startsWith(p))) {
+        issues.push({
+          severity: 'error',
+          segment: 'CNE',
+          field: 'name_UAE',
+          message: `UAE PLACI: Nombre consignee "${cneName}" no aceptado. Debe ser nombre del destinatario REAL (no placeholder).`,
+          rule: 'PLACI §5.6.3: Nombre debe ser del ultimate consignee real',
+          found: cneName,
+          suggestion: 'Usar nombre completo legal de la empresa o persona'
+        });
+      }
+    }
+  }
+
+  // -----------------------------------------------------------
+  // BANGLADESH (BD) — BIN + DCV obligatorio §5.7
+  // -----------------------------------------------------------
+  if (countryCode === 'BD') {
+    // BIN obligatorio
+    const hasBin = /OCI\/BD\/(CNE|NFY)\/T\/BIN\d{9}-\d{4}/.test(ociContent) || /OCI\/BD\/(CNE|NFY)\/T\/BIN\d{9}-\d{4}/.test(fullMessage);
+    if (!hasBin) {
+      issues.push({
+        severity: 'error',
+        segment: 'OCI',
+        field: 'BIN',
+        message: `BANGLADESH: Falta BIN (Business Identification Number) del consignee para destino ${airportCode}`,
+        rule: 'OCI §5.7.2: OCI/BD/CNE/T/BIN<9 dígitos>-<4 dígitos> obligatorio',
+        suggestion: 'Agregar: OCI/BD/CNE/T/BIN123456789-0001'
+      });
+    }
+
+    // DCV obligatorio — NCV no aceptado
+    if (cvdContent.includes('NCV')) {
+      issues.push({
+        severity: 'error',
+        segment: 'CVD',
+        field: 'DCV_BD',
+        message: `BANGLADESH: NCV (No Customs Value) NO es aceptado para destino ${airportCode}. Debe declarar valor numérico.`,
+        rule: 'CVD §5.7.1: Valor aduanero obligatorio. Si no hay valor, usar 0 [FNA: CVD0040]',
+        found: 'NCV',
+        suggestion: 'Reemplazar NCV por 0 o el valor real de la mercancía'
+      });
+    }
+  }
+
+  // -----------------------------------------------------------
+  // SRI LANKA (LK) — DCV obligatorio §5.12
+  // -----------------------------------------------------------
+  if (countryCode === 'LK') {
+    if (cvdContent.includes('NCV')) {
+      issues.push({
+        severity: 'error',
+        segment: 'CVD',
+        field: 'DCV_LK',
+        message: `SRI LANKA: NCV NO es aceptado para destino ${airportCode}. Declarar valor numérico obligatorio.`,
+        rule: 'CVD §5.12: Valor aduanero obligatorio desde 1/Ago/2023. Usar 0 si no hay valor.',
+        found: 'NCV',
+        suggestion: 'Reemplazar NCV por 0 o el valor real'
+      });
+    }
+  }
+
+  // -----------------------------------------------------------
+  // MARRUECOS (MA) — Trade Register + HS 4+ dígitos §5.9
+  // -----------------------------------------------------------
+  if (countryCode === 'MA') {
+    const hasTradeRegister = /OCI\/MA\/CNE\/T\//.test(ociContent) || /OCI\/MA\/CNE\/T\//.test(fullMessage);
+    if (!hasTradeRegister) {
+      issues.push({
+        severity: 'error',
+        segment: 'OCI',
+        field: 'tradeRegister_MA',
+        message: `MARRUECOS: Falta Trade Register Number del consignee para destino ${airportCode}`,
+        rule: 'OCI §5.9.1: OCI/MA/CNE/T/<trade_register> obligatorio. Para no-corporativo usar 15 ceros.',
+        suggestion: 'Agregar: OCI/MA/CNE/T/0XX0XXXX o OCI/MA/CNE/T/000000000000000 (si no es empresa)'
+      });
+    }
+
+    // HS Code 4+ dígitos obligatorio
+    const hasHs = /\/NH\/\d{4}/.test(rtdContent) || /\/NH\/\d{4}/.test(nhContent) || /\/NH\/\d{4}/.test(fullMessage);
+    if (!hasHs) {
+      issues.push({
+        severity: 'error',
+        segment: 'GLOBAL',
+        field: 'HS_MA',
+        message: `MARRUECOS: Falta HS Code (mínimo 4 dígitos) obligatorio para destino ${airportCode}`,
+        rule: 'HS §5.9.2: Código HS 4+ dígitos obligatorio para Marruecos',
+        suggestion: 'Agregar código HS en RTD /NH'
+      });
+    }
+  }
+
+  // -----------------------------------------------------------
+  // TURQUÍA (TR) — HS Code obligatorio §5.10
+  // -----------------------------------------------------------
+  if (countryCode === 'TR') {
+    const hasHs = /\/NH\/\d{6}/.test(rtdContent) || /\/NH\/\d{6}/.test(nhContent) || /\/NH\/\d{6}/.test(fullMessage);
+    if (!hasHs) {
+      issues.push({
+        severity: 'error',
+        segment: 'GLOBAL',
+        field: 'HS_TR',
+        message: `TURQUÍA: Falta HS Code obligatorio para destino ${airportCode}`,
+        rule: 'HS §5.10: Código HS obligatorio en RTD /NH para Turquía',
+        suggestion: 'Agregar código HS en RTD /NH'
+      });
+    }
+  }
+
+  // -----------------------------------------------------------
+  // JORDANIA (JO) — Teléfono CNE obligatorio §5.11
+  // -----------------------------------------------------------
+  if (countryCode === 'JO') {
+    const hasPhone = /\/TE\//.test(cneContent) || /\/CT.*TE/.test(cneContent);
+    if (!hasPhone) {
+      issues.push({
+        severity: 'error',
+        segment: 'CNE',
+        field: 'phone_JO',
+        message: `JORDANIA: Falta teléfono del consignee obligatorio para destino ${airportCode}`,
+        rule: 'CNE §5.11: Teléfono del consignee obligatorio para Jordania [FNA: CNE0055]',
+        suggestion: 'Agregar /TE/00962XXXXXXXXX después del código postal en CNE'
+      });
+    }
+  }
+
+  // -----------------------------------------------------------
+  // KENIA (KE) — PIN + HS + COU §5.13
+  // -----------------------------------------------------------
+  if (countryCode === 'KE') {
+    // HS Code obligatorio
+    const hasHs = /\/NH\/\d{6}/.test(rtdContent) || /\/NH\/\d{6}/.test(nhContent) || /\/NH\/\d{6}/.test(fullMessage);
+    if (!hasHs) {
+      issues.push({
+        severity: 'error',
+        segment: 'GLOBAL',
+        field: 'HS_KE',
+        message: `KENIA: Falta HS Code obligatorio para destino ${airportCode}`,
+        rule: 'HS §5.13: Código HS obligatorio para Kenia',
+        suggestion: 'Agregar código HS en RTD /NH'
+      });
+    }
+
+    // Teléfono CNE obligatorio
+    const hasPhone = /\/TE\//.test(cneContent) || /\/CT.*TE/.test(cneContent);
+    if (!hasPhone) {
+      issues.push({
+        severity: 'warning',
+        segment: 'CNE',
+        field: 'phone_KE',
+        message: `KENIA: Se recomienda teléfono del consignee para destino ${airportCode}`,
+        rule: 'CNE §5.13: Teléfono recomendado para Kenia'
+      });
+    }
+  }
+
+  // -----------------------------------------------------------
+  // USA (US) — ACAS 7+1 elements §5.1
+  // -----------------------------------------------------------
+  if (countryCode === 'US') {
+    // State obligatorio (2 chars)
+    // Buscar línea que termine en /XX (exactamente 2 letras = state code)
+    // Ej: /MIAMI/FL  /LOS ANGELES/CA  /CIMIAMI/FL
+    // NO matchea: /US/33122 (tiene dígitos) ni /TE/3055... (no termina ahí)
+    const cneLines = cneContent.split('\n');
+    const stateMatch = cneLines.some(line => /\/[A-Z][A-Z\s]*\/[A-Z]{2}\s*$/.test(line.trim()));
+    if (!stateMatch) {
+      issues.push({
+        severity: 'error',
+        segment: 'CNE',
+        field: 'state_US',
+        message: `USA: Falta State/Province code (2 letras USPS) obligatorio para el consignee en destino USA`,
+        rule: 'CNE §3.5: State code 2[a] obligatorio para USA [FNA: CNE9035]',
+        suggestion: 'Agregar código de estado (ej: CA, NY, TX, FL) en la línea de ciudad: /CILOS ANGELES/CA'
+      });
+    }
+
+    // ZIP Code obligatorio — validación estricta de formato IATA
+    // Según IATA: ZIP Code para USA debe ser exactamente 5 dígitos (nnnnn) o 9 dígitos ZIP+4 (nnnnn-nnnn)
+    // El código postal máximo en IATA es 9[t] (9 caracteres tipo telecom)
+    // IMPORTANTE: El guión (-) SÍ está permitido en campos tipo "t" (telecom) según IATA
+    const allZipMatches = cneContent.match(/\/(\d{1,9}(-\d{1,4})?)/g) || [];
+    const zipValues = allZipMatches.map(m => m.replace('/', '').trim()).filter(z => z.length >= 1);
+    
+    // Buscar un ZIP que cumpla con el formato correcto
+    const validZipFound = zipValues.some(z => /^\d{5}(-\d{4})?$/.test(z));
+    const anyZipLikeValue = zipValues.find(z => /^\d+(-\d+)?$/.test(z));
+    
+    if (zipValues.length === 0) {
+      issues.push({
+        severity: 'error',
+        segment: 'CNE',
+        field: 'zip_US',
+        message: `USA: Falta ZIP Code obligatorio para el consignee en destino USA. Sin ZIP válido el envío será RECHAZADO por CBP.`,
+        rule: 'CNE §3.5: ZIP Code (5 dígitos nnnnn o ZIP+4 nnnnn-nnnn) obligatorio para USA [FNA: CNE9045]',
+        suggestion: 'Agregar ZIP Code: exactamente 5 dígitos (ej: 33126) o ZIP+4 con guión (ej: 33126-1234)'
+      });
+    } else if (!validZipFound && anyZipLikeValue) {
+      // Hay algo que parece ZIP pero no tiene el formato correcto
+      const foundZip = anyZipLikeValue;
+      
+      // Detectar problemas específicos
+      if (/^\d{1,4}$/.test(foundZip)) {
+        // ZIP muy corto (menos de 5 dígitos) - ej: "10", "123", "1234"
+        issues.push({
+          severity: 'error',
+          segment: 'CNE',
+          field: 'zip_US',
+          message: `USA: ZIP Code "${foundZip}" es INVÁLIDO. Tiene solo ${foundZip.length} dígito(s). El ZIP Code de USA DEBE tener exactamente 5 dígitos.`,
+          rule: 'CNE §3.5: ZIP Code USA = exactamente 5[n] (nnnnn) o 9[n] con guión (nnnnn-nnnn) [FNA: CNE0045]',
+          found: foundZip,
+          expected: 'Formato: 12345 (5 dígitos) o 12345-1234 (ZIP+4)',
+          suggestion: `Corregir "${foundZip}" a un ZIP Code válido de 5 dígitos. Ejemplo: si destino es Miami usar 33126`
+        });
+      } else if (/^\d{6,9}$/.test(foundZip) && !foundZip.includes('-')) {
+        // ZIP de 6-9 dígitos sin guión - probablemente ZIP+4 mal formateado
+        issues.push({
+          severity: 'warning',
+          segment: 'CNE',
+          field: 'zip_format_US',
+          message: `USA: ZIP Code "${foundZip}" tiene ${foundZip.length} dígitos. Si es ZIP+4, debe tener guión: ${foundZip.slice(0, 5)}-${foundZip.slice(5)}`,
+          rule: 'CNE §3.5: ZIP+4 formato = nnnnn-nnnn (con guión). El guión SÍ está permitido por IATA en campos tipo "t" [FNA: CNE0045]',
+          found: foundZip,
+          expected: `${foundZip.slice(0, 5)}-${foundZip.slice(5)}`,
+          suggestion: `Agregar guión: ${foundZip.slice(0, 5)}-${foundZip.slice(5)}`
+        });
+      } else if (/^\d+-\d+$/.test(foundZip) && !/^\d{5}-\d{4}$/.test(foundZip)) {
+        // Tiene guión pero no en el formato correcto
+        const parts = foundZip.split('-');
+        issues.push({
+          severity: 'warning',
+          segment: 'CNE',
+          field: 'zip_format_US',
+          message: `USA: ZIP Code "${foundZip}" tiene formato incorrecto. Formato ZIP+4 correcto: nnnnn-nnnn (5 dígitos, guión, 4 dígitos).`,
+          rule: 'CNE §3.5: ZIP+4 = 5 dígitos + guión + 4 dígitos [FNA: CNE0045]',
+          found: foundZip,
+          expected: 'Formato: 12345-1234',
+          suggestion: `Verificar que la primera parte tenga 5 dígitos y la segunda 4 dígitos`
+        });
+      } else {
+        // Otro formato no reconocido
+        issues.push({
+          severity: 'warning',
+          segment: 'CNE',
+          field: 'zip_format_US',
+          message: `USA: ZIP Code "${foundZip}" puede no ser válido. Formato estándar USPS: 5 dígitos o ZIP+4 (con guión).`,
+          rule: 'CNE §3.5: ZIP Code formato USPS estándar [FNA: CNE9046]',
+          found: foundZip,
+          expected: 'Formato: 12345 o 12345-1234',
+          suggestion: 'Verificar que el ZIP Code corresponda a una dirección real en USA'
+        });
+      }
+    }
+
+    // TIN/EIN del consignee — obligatorio para empresas en USA
+    const hasTinCne = /OCI\/US\/CNE\/T\/(TIN|EIN|SSN|ITIN)/.test(ociContent) || 
+                       /OCI\/US\/CNE\/T\/(TIN|EIN|SSN|ITIN)/.test(fullMessage) ||
+                       /OCI\/US\/T\/ID\//.test(ociContent);
+    if (!hasTinCne) {
+      issues.push({
+        severity: 'warning',
+        segment: 'OCI',
+        field: 'TIN_US',
+        message: `USA: Se recomienda TIN/EIN del consignee para destino ${airportCode}. El Tax ID mejora el procesamiento de aduanas CBP.`,
+        rule: 'OCI §5.1: OCI/US/CNE/T/TIN<número> o EIN recomendado para USA [FNA: OCI-US-001]',
+        suggestion: 'Agregar: OCI/US/CNE/T/TIN123456789 (9 dígitos sin guiones) o OCI/US/CNE/T/EIN123456789'
+      });
+    }
+
+    // SLAC obligatorio en consolidaciones
+    if (message.type === 'FHL') {
+      for (const hbs of hbsSegs) {
+        const hbsDestMatch = hbs.content.match(/[A-Z]{3}([A-Z]{3})/);
+        const hbsDest = hbsDestMatch ? getCountryFromAirport(hbsDestMatch[1]) : '';
+        if (hbsDest === 'US') {
+          // Detectar SLAC en ambos formatos:
+          // FHL/2 legacy: /S<digits>  (ej: /S5)
+          // FHL/4 actual: .../piezas/Kpeso/slac/descripcion (campo numérico entre peso y descripción)
+          const hasSlac = /\/S\d+/.test(hbs.content) || 
+                          /\/K[\d.]+\/\d+\//.test(hbs.content);
+          if (!hasSlac) {
+            const hawbMatch = hbs.content.match(/HBS\/([^\/]+)/);
+            issues.push({
+              severity: 'error',
+              segment: 'HBS',
+              field: 'SLAC_US',
+              message: `USA ACAS: Falta SLAC en house ${hawbMatch ? hawbMatch[1] : '?'} con destino USA. Obligatorio para consolidaciones.`,
+              rule: 'HBS §9.5.3: SLAC (Shipper Load And Count) obligatorio para houses con destino USA',
+              suggestion: 'Agregar /S<piezas> en la línea HBS'
+            });
+          }
+        }
+      }
+    }
+
+    // HS Code recomendado
+    const hasHs = /\/NH\/\d{6}/.test(rtdContent) || /\/NH\/\d{6}/.test(nhContent) || /\/NH\/\d{6}/.test(fullMessage);
+    if (!hasHs) {
+      issues.push({
+        severity: 'warning',
+        segment: 'GLOBAL',
+        field: 'HS_US',
+        message: `USA: HS Code recomendado (6+ dígitos) para destino ${airportCode}. Mejora procesamiento ACAS.`,
+        rule: 'ACAS §5.1: HS Code recomendado para USA',
+        suggestion: 'Agregar código HS en RTD /NH o OCI/US/T/HS/<hscode>'
+      });
+    }
+  }
+
+  // -----------------------------------------------------------
+  // CANADÁ (CA) — Descripción detallada CBSA §5.14
+  // -----------------------------------------------------------
+  if (countryCode === 'CA') {
+    // Province obligatorio (2 chars) — misma lógica que US
+    const cneLinesCA = cneContent.split('\n');
+    const stateMatch = cneLinesCA.some(line => /\/[A-Z][A-Z\s]*\/[A-Z]{2}\s*$/.test(line.trim()));
+    if (!stateMatch) {
+      issues.push({
+        severity: 'error',
+        segment: 'CNE',
+        field: 'province_CA',
+        message: `CANADÁ: Falta Province code (2 letras) obligatorio para el consignee. Sin Province el envío será RECHAZADO por CBSA.`,
+        rule: 'CNE §3.5: Province code 2[a] obligatorio para Canadá [FNA: CNE9135]',
+        suggestion: 'Agregar código de provincia (ej: ON, QC, BC, AB) en línea ciudad'
+      });
+    }
+
+    // Postal code obligatorio (formato A1A 1A1 o A1A1A1) - IATA permite hasta 9[t]
+    // Formato canadiense: Letra-Dígito-Letra (espacio opcional) Dígito-Letra-Dígito
+    // El espacio SÍ está permitido por IATA en campos tipo "t"
+    
+    // Buscar todos los posibles códigos postales en el contenido
+    const allPostalMatchesCA = cneContent.match(/[A-Z]\d[A-Z]\s?\d[A-Z]\d/g) || [];
+    const anyPostalLikeCA = cneContent.match(/[A-Z0-9]{3,7}/g) || [];
+    
+    // Filtrar valores que parecen códigos postales canadienses
+    const validPostalCA = allPostalMatchesCA.length > 0;
+    
+    if (!validPostalCA) {
+      // Buscar si hay algo que parece código postal pero está mal formateado
+      const possibleBadPostal = cneContent.match(/\/CA\/([^\/\n]+)/)?.[1]?.trim() || '';
+      
+      if (possibleBadPostal && possibleBadPostal.length > 0) {
+        // Hay algo después de /CA/ pero no es formato válido
+        if (/^\d+$/.test(possibleBadPostal)) {
+          // Solo números - probablemente confundido con ZIP de USA
+          issues.push({
+            severity: 'error',
+            segment: 'CNE',
+            field: 'postal_CA',
+            message: `CANADÁ: Código postal "${possibleBadPostal}" es INVÁLIDO. Canadá usa formato alfanumérico A1A 1A1, NO numérico como USA.`,
+            rule: 'CNE §3.5: Postal Code Canadá = A1A 1A1 (letra-número-letra espacio número-letra-número) [FNA: CNE0045]',
+            found: possibleBadPostal,
+            expected: 'Formato: A1A 1A1 (ej: M5V 2H1)',
+            suggestion: 'El código postal canadiense alterna letras y números. Ejemplo: M5V 2H1, V6B 5K3'
+          });
+        } else if (/^[A-Z]{2,}/.test(possibleBadPostal) || /\d{4,}/.test(possibleBadPostal)) {
+          // Demasiadas letras seguidas o números seguidos
+          issues.push({
+            severity: 'error',
+            segment: 'CNE',
+            field: 'postal_CA',
+            message: `CANADÁ: Código postal "${possibleBadPostal}" tiene formato incorrecto. Debe alternar letra-número-letra número-letra-número.`,
+            rule: 'CNE §3.5: Postal Code Canadá = A1A 1A1 exactamente [FNA: CNE9145]',
+            found: possibleBadPostal,
+            expected: 'Formato: A1A 1A1 (ej: M5V 2H1)',
+            suggestion: 'Verificar que el código postal siga el patrón canadiense: M5V 2H1'
+          });
+        } else {
+          issues.push({
+            severity: 'error',
+            segment: 'CNE',
+            field: 'postal_CA',
+            message: `CANADÁ: Código postal "${possibleBadPostal}" no tiene formato válido canadiense. Formato requerido: A1A 1A1.`,
+            rule: 'CNE §3.5: Postal Code formato A1A 1A1 obligatorio para Canadá [FNA: CNE9145]',
+            found: possibleBadPostal,
+            expected: 'Formato: A1A 1A1 (ej: M5V 2H1)',
+            suggestion: 'El código postal canadiense tiene 6 caracteres: Letra-Número-Letra Número-Letra-Número'
+          });
+        }
+      } else {
+        issues.push({
+          severity: 'error',
+          segment: 'CNE',
+          field: 'postal_CA',
+          message: `CANADÁ: Falta Postal Code obligatorio para el consignee. Sin código postal válido el envío será RECHAZADO por CBSA.`,
+          rule: 'CNE §3.5: Postal Code formato A1A 1A1 obligatorio para Canadá [FNA: CNE9145]',
+          suggestion: 'Agregar código postal en formato canadiense: A1A 1A1 (ej: M5V 2H1, V6B 5K3)'
+        });
+      }
+    }
+
+    // BN (Business Number) del consignee — recomendado para CBSA
+    const hasBnCne = /OCI\/CA\/CNE\/T\/(BN|GST|TIN)/.test(ociContent) || 
+                      /OCI\/CA\/CNE\/T\/(BN|GST|TIN)/.test(fullMessage) ||
+                      /OCI\/CA\/T\/ID\//.test(ociContent);
+    if (!hasBnCne) {
+      issues.push({
+        severity: 'warning',
+        segment: 'OCI',
+        field: 'BN_CA',
+        message: `CANADÁ: Se recomienda Business Number (BN) del consignee para destino ${airportCode}. Mejora procesamiento CBSA.`,
+        rule: 'OCI §5.14: OCI/CA/CNE/T/BN<número> recomendado para Canadá [FNA: OCI-CA-001]',
+        suggestion: 'Agregar: OCI/CA/CNE/T/BN123456789RC0001 (15 caracteres formato CRA)'
+      });
+    }
+  }
+
+  // -----------------------------------------------------------
+  // EU / ICS2 — EORI OBLIGATORIO §5.2
+  // -----------------------------------------------------------
+  if (EU_COUNTRIES.includes(countryCode)) {
+    // EORI es OBLIGATORIO para destinos EU bajo regulación ICS2
+    const hasEori = /OCI\/(EU|[A-Z]{2})\/T\/EI\//.test(ociContent) || 
+                    /OCI\/(EU|[A-Z]{2})\/T\/EI\//.test(fullMessage) ||
+                    /OCI\/(EU|[A-Z]{2})\/CNE\/T\//.test(ociContent);
+    
+    if (!hasEori) {
+      issues.push({
+        severity: 'error',
+        segment: 'OCI',
+        field: 'EORI_EU',
+        message: `EU ICS2: Falta EORI Number OBLIGATORIO para destino ${airportCode} (${countryCode}). Sin EORI válido la carga puede ser RECHAZADA en aduana EU.`,
+        rule: 'OCI §5.2: OCI/EU/T/EI/<EORI> OBLIGATORIO para cumplimiento ICS2 [FNA: OCI-EU-001]',
+        suggestion: `Agregar: OCI/EU/T/EI/${countryCode}XXXXXXXXXXXXX (EORI del consignee - prefijo país + hasta 15 caracteres)`
+      });
+    } else {
+      // Validar formato EORI: código país (2 letras) + hasta 15 caracteres alfanuméricos
+      const eoriMatch = ociContent.match(/OCI\/(?:EU|[A-Z]{2})\/T\/EI\/([A-Z0-9]+)/) || 
+                        fullMessage.match(/OCI\/(?:EU|[A-Z]{2})\/T\/EI\/([A-Z0-9]+)/);
+      if (eoriMatch) {
+        const eoriValue = eoriMatch[1];
+        // EORI debe comenzar con código de país EU y tener entre 5 y 17 caracteres
+        if (eoriValue.length < 5 || eoriValue.length > 17) {
+          issues.push({
+            severity: 'warning',
+            segment: 'OCI',
+            field: 'EORI_format_EU',
+            message: `EU: EORI "${eoriValue}" tiene formato inusual (${eoriValue.length} caracteres). Formato estándar: código país (2 letras) + 3-15 caracteres.`,
+            rule: 'OCI §5.2: EORI formato = CC + hasta 15 chars alfanuméricos',
+            found: eoriValue,
+            expected: 'Formato: DE123456789 o NL123456789001 (país + 3-15 chars)'
+          });
+        }
+        // Verificar que comience con código de país válido EU
+        const eoriCountry = eoriValue.substring(0, 2);
+        if (!EU_COUNTRIES.includes(eoriCountry) && eoriCountry !== 'EU') {
+          issues.push({
+            severity: 'warning',
+            segment: 'OCI',
+            field: 'EORI_country_EU',
+            message: `EU: EORI "${eoriValue}" no comienza con código de país EU válido. Verificar que el EORI corresponda al país de destino.`,
+            rule: 'OCI §5.2: EORI debe comenzar con código ISO del país EU registrado',
+            found: eoriCountry,
+            expected: `Código país EU (ej: ${countryCode}, DE, NL, FR)`
+          });
+        }
+      }
+    }
+
+    // Postal code obligatorio para EU
+    const hasPostalEU = cneContent.includes('/PO') || /\/\d{4,5}/.test(cneContent);
+    if (!hasPostalEU) {
+      issues.push({
+        severity: 'error',
+        segment: 'CNE',
+        field: 'postal_EU',
+        message: `EU ICS2: Falta código postal del consignee obligatorio para destino ${airportCode} (${countryCode}). Sin código postal el envío puede ser RECHAZADO.`,
+        rule: 'CNE: Código postal obligatorio para destinos EU [FNA: CNE9245]',
+        suggestion: 'Agregar código postal del país de destino en el segmento CNE'
+      });
+    }
+  }
+
+  // -----------------------------------------------------------
+  // UK (GB) — EORI post-Brexit OBLIGATORIO §5.16
+  // -----------------------------------------------------------
+  if (countryCode === 'GB') {
+    const hasGbEori = /OCI\/GB\/T\/EI\/GB/.test(ociContent) || 
+                       /OCI\/GB\/T\/EI\/GB/.test(fullMessage) ||
+                       /OCI\/GB\/CNE\/T\//.test(ociContent);
+    
+    if (!hasGbEori) {
+      issues.push({
+        severity: 'error',
+        segment: 'OCI',
+        field: 'EORI_GB',
+        message: `UK: Falta EORI Number OBLIGATORIO para destino ${airportCode}. Sin EORI válido la carga puede ser RECHAZADA por HMRC.`,
+        rule: 'OCI §5.16: OCI/GB/T/EI/GB<alphanumeric> obligatorio para UK post-Brexit [FNA: OCI-GB-001]',
+        suggestion: 'Agregar: OCI/GB/T/EI/GB123456789000 (GB + hasta 12 caracteres alfanuméricos)'
+      });
+    } else {
+      // Validar formato EORI UK: GB + 9-15 caracteres
+      const gbEoriMatch = ociContent.match(/OCI\/GB\/T\/EI\/(GB[A-Z0-9]+)/) || 
+                          fullMessage.match(/OCI\/GB\/T\/EI\/(GB[A-Z0-9]+)/);
+      if (gbEoriMatch) {
+        const gbEoriValue = gbEoriMatch[1];
+        // EORI UK debe ser GB + 9 a 15 caracteres (total 11-17)
+        if (gbEoriValue.length < 11 || gbEoriValue.length > 17) {
+          issues.push({
+            severity: 'warning',
+            segment: 'OCI',
+            field: 'EORI_format_GB',
+            message: `UK: EORI "${gbEoriValue}" tiene formato inusual (${gbEoriValue.length} caracteres). Formato estándar UK: GB + 9-15 caracteres.`,
+            rule: 'OCI §5.16: EORI UK formato = GB + 9-15 chars alfanuméricos',
+            found: gbEoriValue,
+            expected: 'Formato: GB123456789 o GB123456789000'
+          });
+        }
+      }
+    }
+
+    // Postal code obligatorio para UK
+    const hasPostalGB = cneContent.includes('/PO') || /[A-Z]{1,2}\d{1,2}\s?\d[A-Z]{2}/.test(cneContent);
+    if (!hasPostalGB) {
+      issues.push({
+        severity: 'error',
+        segment: 'CNE',
+        field: 'postal_GB',
+        message: `UK: Falta código postal del consignee obligatorio para destino ${airportCode}. Sin postal code el envío puede ser RECHAZADO.`,
+        rule: 'CNE: Código postal obligatorio para UK [FNA: CNE9345]',
+        suggestion: 'Agregar código postal UK: formato XX1 1XX (ej: SW1A 1AA, M1 1AE)'
+      });
+    }
+  }
+
+  // -----------------------------------------------------------
+  // CHINA (CN) — Enterprise Code + teléfono §5.3
+  // -----------------------------------------------------------
+  if (countryCode === 'CN') {
+    // Enterprise Code (USCI) del consignee
+    const hasUsci = /OCI\/CN\/CNE\/T\//.test(ociContent) || /OCI\/CN\/CNE\/T\//.test(fullMessage) ||
+                    /OCI\/CN\/T\/SM\//.test(ociContent) || /OCI\/CN\/T\/SM\//.test(fullMessage);
+    if (!hasUsci) {
+      issues.push({
+        severity: 'error',
+        segment: 'OCI',
+        field: 'USCI_CN',
+        message: `CHINA: Falta Enterprise Code (USCI) del consignee para destino ${airportCode}. Obligatorio para CAAC.`,
+        rule: 'OCI §5.3: Enterprise Code 18 chars [A-Z0-9] obligatorio para China',
+        suggestion: 'Agregar: OCI/CN/CNE/T/<18 chars USCI> o OCI/CN/CNE/T/9999CN (si no tiene código)'
+      });
+    }
+
+    // Teléfono del consignee obligatorio
+    const hasCnePhone = /\/TE\//.test(cneContent) || /\/CT.*TE/.test(cneContent);
+    if (!hasCnePhone) {
+      issues.push({
+        severity: 'error',
+        segment: 'CNE',
+        field: 'phone_CN',
+        message: `CHINA: Falta teléfono del consignee obligatorio para destino ${airportCode}. CAAC lo exige para Risk Assessment.`,
+        rule: 'CNE §5.3: Teléfono del consignee obligatorio para China [FNA: CNE0055]',
+        suggestion: 'Agregar /TE/86XXXXXXXXX en el segmento CNE'
+      });
+    }
+  }
+
+  // -----------------------------------------------------------
+  // ARABIA SAUDITA (SA) — ZATCA §5.8
+  // -----------------------------------------------------------
+  if (countryCode === 'SA') {
+    const isConsoSA = !!message.hawbNumber || enabledSegments.some(s => s.content?.includes('/NC/'));
+    if (isConsoSA || message.type === 'FHL') {
+      issues.push({
+        severity: 'info',
+        segment: 'GLOBAL',
+        message: `ARABIA SAUDITA: El Freight Forwarder debe estar registrado como Authorized Freight Agent en portal ZATCA para consolidaciones a ${airportCode}.`,
+        rule: 'ZATCA §5.8: Registro en ZATCA obligatorio para FF con consolidaciones a SA',
+        suggestion: 'Verificar registro ZATCA del FF y agregar número de registro en CNE Account Number'
+      });
+    }
+  }
+
+  // -----------------------------------------------------------
+  // JAPÓN (JP) — ZIP Code + NACCS §5.16
+  // -----------------------------------------------------------
+  if (countryCode === 'JP') {
+    // ZIP Code obligatorio para Japón (formato nnn-nnnn)
+    const jpZipMatch = cneContent.match(/(\d{3}-\d{4})/);
+    const hasJpZip = jpZipMatch !== null;
+    const anyNumeric = cneContent.match(/\/(\d{3,7})/);
+    
+    if (!hasJpZip) {
+      if (anyNumeric) {
+        const foundNum = anyNumeric[1];
+        if (/^\d{7}$/.test(foundNum)) {
+          // 7 dígitos sin guión
+          issues.push({
+            severity: 'warning',
+            segment: 'CNE',
+            field: 'zip_JP',
+            message: `JAPÓN: ZIP Code "${foundNum}" debería tener formato nnn-nnnn (con guión). Formato: ${foundNum.slice(0,3)}-${foundNum.slice(3)}`,
+            rule: 'CNE §3.5: ZIP Code Japón = nnn-nnnn (7 dígitos con guión) [FNA: CNE0045]',
+            found: foundNum,
+            expected: `${foundNum.slice(0,3)}-${foundNum.slice(3)}`,
+            suggestion: 'Agregar guión después del tercer dígito'
+          });
+        } else if (foundNum.length < 7) {
+          issues.push({
+            severity: 'error',
+            segment: 'CNE',
+            field: 'zip_JP',
+            message: `JAPÓN: ZIP Code "${foundNum}" es INVÁLIDO. Japón usa 7 dígitos formato nnn-nnnn.`,
+            rule: 'CNE §3.5: ZIP Code Japón = exactamente 7 dígitos [FNA: CNE0045]',
+            found: foundNum,
+            expected: 'Formato: 100-0001',
+            suggestion: 'Verificar el código postal japonés correcto'
+          });
+        }
+      } else {
+        issues.push({
+          severity: 'error',
+          segment: 'CNE',
+          field: 'zip_JP',
+          message: `JAPÓN: Falta ZIP Code obligatorio para el consignee. Requerido por AMS-JP (NACCS).`,
+          rule: 'CNE §3.5: ZIP Code formato nnn-nnnn obligatorio para Japón [FNA: CNE0045]',
+          suggestion: 'Agregar código postal japonés: formato nnn-nnnn (ej: 100-0001)'
+        });
+      }
+    }
+  }
+
+  // -----------------------------------------------------------
+  // ALEMANIA (DE) — PLZ 5 dígitos obligatorio §5.15
+  // -----------------------------------------------------------
+  if (countryCode === 'DE') {
+    // PLZ (Postleitzahl) obligatorio - exactamente 5 dígitos
+    const dePlzMatch = cneContent.match(/\/(\d{5})(?:\/|$|\s)/);
+    const anyPlzLike = cneContent.match(/\/(\d{1,6})(?:\/|$|\s)/);
+    
+    if (!dePlzMatch) {
+      if (anyPlzLike) {
+        const foundPlz = anyPlzLike[1];
+        if (foundPlz.length !== 5) {
+          issues.push({
+            severity: 'error',
+            segment: 'CNE',
+            field: 'plz_DE',
+            message: `ALEMANIA: PLZ "${foundPlz}" es INVÁLIDO. Alemania usa exactamente 5 dígitos.`,
+            rule: 'CNE §3.5: PLZ Alemania = exactamente 5[n] dígitos [FNA: CNE0045]',
+            found: `${foundPlz.length} dígitos`,
+            expected: '5 dígitos (ej: 60313)',
+            suggestion: `El código postal alemán tiene exactamente 5 dígitos`
+          });
+        }
+      } else {
+        issues.push({
+          severity: 'error',
+          segment: 'CNE',
+          field: 'plz_DE',
+          message: `ALEMANIA: Falta PLZ (Postleitzahl) obligatorio para el consignee. Sin PLZ el envío será RECHAZADO.`,
+          rule: 'CNE §3.5: PLZ obligatorio para Alemania [FNA: CNE0045]',
+          suggestion: 'Agregar código postal alemán: 5 dígitos (ej: 60313 Frankfurt)'
+        });
+      }
+    }
+  }
+
+  // -----------------------------------------------------------
+  // AUSTRALIA (AU) — ABN + State §5.16
+  // -----------------------------------------------------------
+  if (countryCode === 'AU') {
+    // State obligatorio (2-3 chars): NSW, VIC, QLD, WA, SA, TAS, NT, ACT
+    const auStates = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'NT', 'ACT'];
+    const hasAuState = auStates.some(st => cneContent.includes(`/${st}`) || cneContent.includes(`/${st}/`));
+    
+    if (!hasAuState) {
+      issues.push({
+        severity: 'error',
+        segment: 'CNE',
+        field: 'state_AU',
+        message: `AUSTRALIA: Falta State/Territory code obligatorio para el consignee.`,
+        rule: 'CNE §3.5: State code 2-3[a] obligatorio para Australia [FNA: CNE0035]',
+        suggestion: 'Agregar código: NSW, VIC, QLD, WA, SA, TAS, NT o ACT'
+      });
+    }
+
+    // Postal code obligatorio (4 dígitos para Australia)
+    const auPostalMatch = cneContent.match(/\/(\d{4})(?:\/|$|\s)/);
+    if (!auPostalMatch) {
+      issues.push({
+        severity: 'error',
+        segment: 'CNE',
+        field: 'postal_AU',
+        message: `AUSTRALIA: Falta Postal Code obligatorio para el consignee. Australia usa 4 dígitos.`,
+        rule: 'CNE §3.5: Postal Code Australia = 4[n] dígitos [FNA: CNE0045]',
+        suggestion: 'Agregar código postal australiano: 4 dígitos (ej: 2000 Sydney, 3000 Melbourne)'
+      });
+    }
+
+    // ABN recomendado
+    const hasAbn = /OCI\/AU\/CNE\/T\/ABN/.test(ociContent) || /OCI\/AU\/T\/ID\//.test(ociContent);
+    if (!hasAbn) {
+      issues.push({
+        severity: 'warning',
+        segment: 'OCI',
+        field: 'ABN_AU',
+        message: `AUSTRALIA: Se recomienda ABN (Australian Business Number) del consignee para destino ${airportCode}.`,
+        rule: 'OCI §5.16: OCI/AU/CNE/T/ABN<11 dígitos> recomendado',
+        suggestion: 'Agregar: OCI/AU/CNE/T/ABN53004085616 (11 dígitos sin espacios)'
+      });
+    }
+  }
+
+  // -----------------------------------------------------------
+  // INDIA (IN) — IEC + GSTIN §5.16
+  // -----------------------------------------------------------
+  if (countryCode === 'IN') {
+    // IEC (Importer-Exporter Code) obligatorio
+    const hasIec = /OCI\/IN\/CNE\/T\/IEC/.test(ociContent) || /OCI\/IN\/T\/ID\//.test(ociContent);
+    const hasGstin = /OCI\/IN\/CNE\/T\/GST/.test(ociContent);
+    
+    if (!hasIec && !hasGstin) {
+      issues.push({
+        severity: 'error',
+        segment: 'OCI',
+        field: 'IEC_IN',
+        message: `INDIA: Falta IEC (Importer-Exporter Code) o GSTIN del consignee para destino ${airportCode}. Obligatorio para aduanas India.`,
+        rule: 'OCI §5.16: IEC (10 chars) o GSTIN (15 chars) obligatorio para India [FNA: OCI-IN-001]',
+        suggestion: 'Agregar: OCI/IN/CNE/T/IEC0505012345 (10 chars) o OCI/IN/CNE/T/GST22AAAAA0000A1Z5 (15 chars)'
+      });
+    }
+
+    // Postal code obligatorio (6 dígitos para India)
+    const inPostalMatch = cneContent.match(/\/(\d{6})(?:\/|$|\s)/);
+    if (!inPostalMatch) {
+      issues.push({
+        severity: 'error',
+        segment: 'CNE',
+        field: 'postal_IN',
+        message: `INDIA: Falta PIN Code obligatorio para el consignee. India usa 6 dígitos.`,
+        rule: 'CNE §3.5: PIN Code India = 6[n] dígitos [FNA: CNE0045]',
+        suggestion: 'Agregar código postal indio: 6 dígitos (ej: 110001 Delhi, 400001 Mumbai)'
+      });
+    }
+  }
+
+  // -----------------------------------------------------------
+  // MÉXICO (MX) — RFC §5.16
+  // -----------------------------------------------------------
+  if (countryCode === 'MX') {
+    // RFC (Registro Federal de Contribuyentes) recomendado
+    const hasRfc = /OCI\/MX\/CNE\/T\/RFC/.test(ociContent) || /OCI\/MX\/T\/ID\//.test(ociContent);
+    
+    if (!hasRfc) {
+      issues.push({
+        severity: 'warning',
+        segment: 'OCI',
+        field: 'RFC_MX',
+        message: `MÉXICO: Se recomienda RFC (Registro Federal de Contribuyentes) del consignee para destino ${airportCode}.`,
+        rule: 'OCI §5.16: RFC 12-13 chars recomendado para México',
+        suggestion: 'Agregar: OCI/MX/CNE/T/RFCXAXX010101000 (12-13 caracteres)'
+      });
+    }
+
+    // Código postal obligatorio (5 dígitos para México)
+    const mxPostalMatch = cneContent.match(/\/(\d{5})(?:\/|$|\s)/);
+    if (!mxPostalMatch) {
+      issues.push({
+        severity: 'error',
+        segment: 'CNE',
+        field: 'postal_MX',
+        message: `MÉXICO: Falta Código Postal obligatorio para el consignee. México usa 5 dígitos.`,
+        rule: 'CNE §3.5: Código Postal México = 5[n] dígitos [FNA: CNE0045]',
+        suggestion: 'Agregar código postal mexicano: 5 dígitos (ej: 06600 Ciudad de México)'
+      });
+    }
+  }
+
+  // -----------------------------------------------------------
+  // BRASIL (BR) — CNPJ/CPF §5.16
+  // -----------------------------------------------------------
+  if (countryCode === 'BR') {
+    // CNPJ (empresa) o CPF (persona) recomendado
+    const hasCnpj = /OCI\/BR\/CNE\/T\/CNPJ/.test(ociContent) || /OCI\/BR\/T\/ID\//.test(ociContent);
+    const hasCpf = /OCI\/BR\/CNE\/T\/CPF/.test(ociContent);
+    
+    if (!hasCnpj && !hasCpf) {
+      issues.push({
+        severity: 'warning',
+        segment: 'OCI',
+        field: 'CNPJ_BR',
+        message: `BRASIL: Se recomienda CNPJ (empresa) o CPF (persona física) del consignee para destino ${airportCode}.`,
+        rule: 'OCI §5.16: CNPJ 14 dígitos o CPF 11 dígitos recomendado para Brasil',
+        suggestion: 'Agregar: OCI/BR/CNE/T/CNPJ12345678000195 (sin puntos/guiones) o OCI/BR/CNE/T/CPF12345678909'
+      });
+    }
+
+    // CEP obligatorio (8 dígitos o 5-3 con guión)
+    const brCepMatch = cneContent.match(/(\d{5}-?\d{3})/);
+    if (!brCepMatch) {
+      issues.push({
+        severity: 'error',
+        segment: 'CNE',
+        field: 'cep_BR',
+        message: `BRASIL: Falta CEP obligatorio para el consignee. Brasil usa 8 dígitos (nnnnn-nnn).`,
+        rule: 'CNE §3.5: CEP Brasil = 8 dígitos formato nnnnn-nnn [FNA: CNE0045]',
+        suggestion: 'Agregar CEP: 8 dígitos (ej: 01310-100 São Paulo)'
+      });
+    }
+  }
+
+  // -----------------------------------------------------------
+  // COREA DEL SUR (KR) — P/C Number §5.16
+  // -----------------------------------------------------------
+  if (countryCode === 'KR') {
+    // P/C Number (Personal/Company Customs ID) recomendado
+    const hasPcNumber = /OCI\/KR\/CNE\/T\/P/.test(ociContent) || /OCI\/KR\/T\/ID\//.test(ociContent);
+    
+    if (!hasPcNumber) {
+      issues.push({
+        severity: 'warning',
+        segment: 'OCI',
+        field: 'PC_KR',
+        message: `COREA DEL SUR: Se recomienda P/C Number (Customs ID) del consignee para destino ${airportCode}.`,
+        rule: 'OCI §5.16: P/C Number recomendado para Corea del Sur',
+        suggestion: 'Agregar: OCI/KR/CNE/T/P<número de customs ID>'
+      });
+    }
+
+    // Postal code obligatorio (5 dígitos para Corea del Sur)
+    const krPostalMatch = cneContent.match(/\/(\d{5})(?:\/|$|\s)/);
+    if (!krPostalMatch) {
+      issues.push({
+        severity: 'error',
+        segment: 'CNE',
+        field: 'postal_KR',
+        message: `COREA DEL SUR: Falta Postal Code obligatorio. Corea del Sur usa 5 dígitos.`,
+        rule: 'CNE §3.5: Postal Code Corea = 5[n] dígitos [FNA: CNE0045]',
+        suggestion: 'Agregar código postal coreano: 5 dígitos (ej: 06236 Seoul)'
+      });
+    }
+  }
+
+  // -----------------------------------------------------------
+  // VALIDACIÓN GENERAL: Identificación Tributaria del Consignatario
+  // -----------------------------------------------------------
+  // Verificar si el OCI tiene ALGÚN tipo de identificador para el consignatario
+  // Esto aplica para TODOS los destinos como buena práctica
+  const hasAnyConsigneeId = 
+    /OCI\/[A-Z]{2}\/CNE\/T\//.test(ociContent) ||    // OCI estándar con CNE
+    /OCI\/[A-Z]{2}\/T\/EI\//.test(ociContent) ||     // EORI
+    /OCI\/[A-Z]{2}\/T\/ID\//.test(ociContent) ||     // ID genérico
+    /OCI\/[A-Z]{2}\/T\/SM\//.test(ociContent) ||     // Social Media/ID CN
+    /OCI\/[A-Z]{2}\/T\/TN\//.test(ociContent) ||     // TIN antiguo formato
+    /OCI\/[A-Z]{2}\/IMP\//.test(ociContent);         // Import permit (Egipto, etc.)
+
+  // Detectar países que REQUIEREN identificación
+  const countriesRequiringId = ['US', 'CA', 'CN', 'EG', 'ID', 'BD', 'MA', ...EU_COUNTRIES, 'GB'];
+  const requiresId = countriesRequiringId.includes(countryCode);
+
+  if (!hasAnyConsigneeId) {
+    if (requiresId) {
+      issues.push({
+        severity: 'error',
+        segment: 'OCI',
+        field: 'consignee_id_general',
+        message: `Falta número de identificación tributaria/fiscal del consignatario para destino ${airportCode} (${countryCode}). Este país REQUIERE identificación del importador.`,
+        rule: `OCI: Identificador del consignee obligatorio para ${countryCode} [FNA: OCI-GEN-001]`,
+        suggestion: getSuggestionForCountryId(countryCode)
+      });
+    } else {
+      issues.push({
+        severity: 'warning',
+        segment: 'OCI',
+        field: 'consignee_id_recommended',
+        message: `Se recomienda incluir número de identificación tributaria del consignatario para destino ${airportCode}. Mejora el procesamiento aduanero.`,
+        rule: 'OCI: Identificador del consignee recomendado para agilizar aduanas',
+        suggestion: 'Agregar OCI con identificador fiscal: NIT, TIN, EORI, VAT, etc. según país de destino'
+      });
+    }
+  }
+
+  return issues;
+}
+
+/**
+ * Retorna la sugerencia específica de identificador según el país
+ */
+function getSuggestionForCountryId(countryCode: string): string {
+  const suggestions: Record<string, string> = {
+    'US': 'Agregar: OCI/US/CNE/T/TIN123456789 (Tax ID 9 dígitos) o OCI/US/CNE/T/EIN123456789',
+    'CA': 'Agregar: OCI/CA/CNE/T/BN123456789RC0001 (Business Number 15 caracteres)',
+    'CN': 'Agregar: OCI/CN/CNE/T/<USCI 18 caracteres> o OCI/CN/CNE/T/9999CN (si no tiene)',
+    'EG': 'Agregar: OCI/EG/CNE/T/<Enterprise Code> (registro Nafeza)',
+    'ID': 'Agregar: OCI/ID/CNE/T/TIN<16 dígitos> (NPWP sin separadores)',
+    'BD': 'Agregar: OCI/BD/CNE/T/BIN<9 dígitos>-<4 dígitos>',
+    'MA': 'Agregar: OCI/MA/CNE/T/<Trade Register Number>',
+    'GB': 'Agregar: OCI/GB/T/EI/GB<hasta 15 caracteres> (EORI UK)',
+    // EU defaults
+    'DE': 'Agregar: OCI/EU/T/EI/DE<hasta 15 caracteres> (EORI Alemania)',
+    'FR': 'Agregar: OCI/EU/T/EI/FR<hasta 15 caracteres> (EORI Francia)',
+    'NL': 'Agregar: OCI/EU/T/EI/NL<hasta 15 caracteres> (EORI Países Bajos)',
+    'ES': 'Agregar: OCI/EU/T/EI/ES<hasta 15 caracteres> (EORI España)',
+    'IT': 'Agregar: OCI/EU/T/EI/IT<hasta 15 caracteres> (EORI Italia)',
+    'BE': 'Agregar: OCI/EU/T/EI/BE<hasta 15 caracteres> (EORI Bélgica)',
+    'AT': 'Agregar: OCI/EU/T/EI/AT<hasta 15 caracteres> (EORI Austria)',
+  };
+  
+  // Para países EU no específicos
+  if (EU_COUNTRIES.includes(countryCode) && !suggestions[countryCode]) {
+    return `Agregar: OCI/EU/T/EI/${countryCode}<hasta 15 caracteres> (EORI)`;
+  }
+  
+  return suggestions[countryCode] || 'Agregar identificador fiscal del consignatario según regulación del país de destino';
 }
 
 /**

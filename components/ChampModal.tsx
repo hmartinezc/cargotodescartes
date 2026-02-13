@@ -32,8 +32,8 @@ import {
 import { ConfigPanel, resetSessionConfig } from './ConfigPanel';
 import { CargoImpSegmentViewer } from './CargoImpSegmentViewer';
 import { CargoImpValidationPanel } from './CargoImpValidationPanel';
-import { CargoXmlViewer } from './CargoXmlViewer';
-import { generateCargoXmlBundle, CargoXmlBundle } from '../services/cargoXmlService';
+import { validateCargoImpMessage } from '../services/providers/cargoimp/cargoImpValidator';
+
 
 // ============================================================
 // COMPONENTE OPTIMIZADO: House Row Colapsable (Memoizado)
@@ -371,11 +371,12 @@ interface ChampModalProps {
   onCopySuccess?: (id: string, ediContent: string) => void;
   /** Callback cuando el usuario guarda la configuración - emite JSON completo para persistir en BD */
   onSaveConfig?: (config: ConnectorConfig) => void;
+  /** Rol del usuario: 'ADM' = admin (ve todo), otros = operator */
+  userRole?: string;
 }
 
-type Tab = 'summary' | 'parties' | 'cargo' | 'financials' | 'security' | 'houses' | 'json' | 'xml';
+type Tab = 'summary' | 'parties' | 'cargo' | 'financials' | 'security' | 'houses' | 'json';
 type JsonSubTab = 'fwb' | 'fhl';
-type XmlSubTab = 'xfwb' | 'xfzb';
 
 const deepClone = <T,>(value: T): T => {
   // structuredClone es significativamente más rápido que JSON.parse(JSON.stringify(...))
@@ -547,23 +548,16 @@ interface SummaryCardProps {
   color?: string;
 }
 
-const SummaryCard: FunctionComponent<SummaryCardProps> = ({ icon, label, value, subvalue, color = 'blue' }) => {
-  const colorClasses: Record<string, string> = {
-    blue: 'bg-purple-50 border-purple-200 text-purple-700',
-    green: 'bg-green-50 border-green-200 text-green-700',
-    amber: 'bg-amber-50 border-amber-200 text-amber-700',
-    purple: 'bg-purple-50 border-purple-200 text-purple-700',
-    slate: 'bg-slate-50 border-slate-200 text-slate-700'
-  };
-  
+const SummaryCard: FunctionComponent<SummaryCardProps> = ({ icon, label, value, subvalue }) => {
+  // Color uniforme púrpura claro para todas las cards
   return (
-    <div className={`rounded-lg border p-3 ${colorClasses[color]}`}>
+    <div className="rounded-lg border p-3 bg-purple-50/60 border-purple-200/70 text-purple-800">
       <div className="flex items-center gap-2 mb-1">
-        {icon}
-        <span className="text-xs uppercase font-bold opacity-70">{label}</span>
+        <span className="text-purple-500">{icon}</span>
+        <span className="text-xs uppercase font-bold text-purple-500">{label}</span>
       </div>
-      <div className="text-lg font-bold">{value}</div>
-      {subvalue && <div className="text-xs opacity-60">{subvalue}</div>}
+      <div className="text-lg font-bold text-purple-900">{value}</div>
+      {subvalue && <div className="text-xs text-purple-400">{subvalue}</div>}
     </div>
   );
 };
@@ -691,13 +685,19 @@ const ExpandableJsonSection: FunctionComponent<ExpandableJsonSectionProps> = ({
 };
 
 // ============================================================
+// ROL DE USUARIO - Se recibe dinámicamente via prop userRole
+// Mapping: 'ADM' → 'admin' (ve todo) | otros → 'operator'
+// ============================================================
+
+// ============================================================
 // COMPONENTE PRINCIPAL DEL MODAL
 // ============================================================
 
-export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose, shipment, onSave, onCopySuccess, onSaveConfig }) => {
-  const [activeTab, setActiveTab] = useState<Tab>('parties');
+export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose, shipment, onSave, onCopySuccess, onSaveConfig, userRole }) => {
+  // Mapear rol externo a rol interno: ADM → admin, otros → operator
+  const USER_ROLE: 'supervisor' | 'admin' | 'operator' = userRole?.toUpperCase() === 'ADM' ? 'admin' : 'operator';
+  const [activeTab, setActiveTab] = useState<Tab>('summary');
   const [activeJsonTab, setActiveJsonTab] = useState<JsonSubTab>('fwb');
-  const [activeXmlTab, setActiveXmlTab] = useState<XmlSubTab>('xfwb');
   const [formData, setFormData] = useState<InternalShipment | null>(null);
   const [copied, setCopied] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
@@ -706,8 +706,7 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
   const [sendMode, setSendMode] = useState<'masterOnly' | 'masterAndHouses'>('masterAndHouses');
   // Estado para ver detalles de transmisión: null = ninguno, 'fwb' = FWB, 0/1/2... = índice de FHL
   const [expandedTransmissionDetail, setExpandedTransmissionDetail] = useState<'fwb' | number | null>(null);
-  // NOTA: XML temporalmente desactivado - usar solo EDI
-  const [messageFormat, setMessageFormat] = useState<'cargoxml' | 'edi'>('edi');
+
   const [activeParty, setActiveParty] = useState<'shipper' | 'consignee'>('shipper');
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [connectorConfig, setConnectorConfig] = useState<ConnectorConfig>(() => loadConnectorConfig());
@@ -781,12 +780,10 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
     if (shipment) {
       setFormData(deepClone(shipment));
       setActiveJsonTab('fwb');
-      setActiveXmlTab('xfwb');
-      setActiveTab('parties');
+      setActiveTab('summary');
       setValidationErrors([]);
       setSendResult(null);
       setSendMode('masterAndHouses');
-      setMessageFormat('edi'); // XML temporalmente desactivado
       setActiveParty('shipper');
       // Resetear houses expandidos al cambiar de shipment
       setExpandedHouses(new Set());
@@ -809,8 +806,16 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
       // Log para debug de toggles
       console.log(`[CARGO-IMP] Regenerando (v${configVersion}) con política: ${policyInfo.airlineName}, segmentos habilitados: ${policyInfo.policy.enabledSegments?.length || 0}`);
       
+      // Determinar si es consolidado según el sendMode:
+      // - masterAndHouses: consolidado (NC) — envía FWB + FHL
+      // - masterOnly: directo (NG) — envía solo FWB
+      const isConsolidatedSend = formData.hasHouses && sendMode === 'masterAndHouses';
+      
+      // Crear shipment con hasHouses ajustado según sendMode para NG/NC correcto
+      const shipmentForFwb = isConsolidatedSend ? formData : { ...formData, hasHouses: false };
+      
       // Generar FWB (usa política basada en prefijo AWB internamente)
-      const fwbMessage = cargoImpService.generateFWB(formData);
+      const fwbMessage = cargoImpService.generateFWB(shipmentForFwb);
       
       // Generar FHL si es consolidado
       let fhlMessages: any[] = [];
@@ -835,26 +840,11 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
       console.error('[CARGO-IMP Generation Error]', e);
       return { fwbMessage: null, fhlMessages: null, concatenatedFhl: null, policyInfo: null, error: e.message || 'Error generando EDI' };
     }
-  }, [formData, selectedProvider, configVersion]);
+  }, [formData, selectedProvider, configVersion, sendMode]);
 
   const { fwbMessage: cargoImpFwb, fhlMessages: cargoImpFhl, concatenatedFhl: cargoImpConcatFhl, policyInfo: cargoImpPolicyInfo, error: cargoImpGenError } = cargoImpGenerationResult;
 
-  // ============================================================
-  // MEMO: Generación XML para Cargo-XML (XFWB/XFZB)
-  // ============================================================
-  const cargoXmlBundle = useMemo<CargoXmlBundle | null>(() => {
-    if (!formData) return null;
-    
-    try {
-      console.log('[CARGO-XML] Generando bundle XFWB/XFZB...');
-      const bundle = generateCargoXmlBundle(formData);
-      console.log(`[CARGO-XML] Bundle generado: XFWB válido=${bundle.xfwb.isValid}, XFZBs=${bundle.xfzbs.length}`);
-      return bundle;
-    } catch (e: any) {
-      console.error('[CARGO-XML Generation Error]', e);
-      return null;
-    }
-  }, [formData, configVersion]);
+
 
   // Handler para toggle de segmentos desde el visor EDI
   // Usa el RuntimeConfigStore (en memoria, sin localStorage)
@@ -949,6 +939,23 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
   const [fwbValidationErrors, setFwbValidationErrors] = useState(0);
   const [showValidationConfirm, setShowValidationConfirm] = useState(false);
 
+  // Estado para el modal de revisión pre-transmisión (errores y alertas)
+  const [showPreTransmitReview, setShowPreTransmitReview] = useState(false);
+  const [preTransmitTab, setPreTransmitTab] = useState<'validation' | 'preview'>('validation');
+
+  // Ejecutar validación eagerly para que el conteo de errores esté disponible
+  // en cualquier tab (no solo cuando se visita el tab EDI)
+  useEffect(() => {
+    if (cargoImpFwb) {
+      const result = validateCargoImpMessage(cargoImpFwb, cargoImpPolicyInfo?.policy);
+      setFwbHasValidationErrors(result.totalErrors > 0);
+      setFwbValidationErrors(result.totalErrors);
+    } else {
+      setFwbHasValidationErrors(false);
+      setFwbValidationErrors(0);
+    }
+  }, [cargoImpFwb, cargoImpPolicyInfo?.policy]);
+
   // Verificar si hay configuración de Descartes disponible
   const hasDescartesConfig = useMemo(() => {
     return !!(formData?.descartesConfig?.endpoint && 
@@ -959,8 +966,7 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
   // Ejecutar la transmisión real
   const executeTransmit = useCallback(async () => {
     if (!formData?.descartesConfig) return;
-    if (messageFormat === 'cargoxml' && !cargoXmlBundle?.xfwb?.xmlContent) return;
-    if (messageFormat === 'edi' && !cargoImpFwb?.fullMessage) return;
+    if (!cargoImpFwb?.fullMessage) return;
 
     setIsTransmitting(true);
     setTransmitSuccess(false);
@@ -979,48 +985,23 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
 
       const awbNumber = formData.awbNumber;
       let transmissionResult;
-      let masterMessage: string;
+      const masterMessage: string = cargoImpFwb!.fullMessage;
       let houseMessages: string[] = [];
+      let hawbNumbers: string[] = [];
 
-      if (messageFormat === 'cargoxml') {
-        // === CARGO-XML ===
-        masterMessage = cargoXmlBundle!.xfwb.xmlContent;
-        
-        // Preparar XFZBs si es consolidado y se quieren todos
-        let hawbNumbers: string[] = [];
-        
-        if (formData.hasHouses && sendMode === 'masterAndHouses' && cargoXmlBundle!.xfzbs.length > 0) {
-          houseMessages = cargoXmlBundle!.xfzbs.map(x => x.xmlContent);
-          hawbNumbers = cargoXmlBundle!.xfzbs.map(x => x.hawbNumber || '');
-        }
-
-        // Transmitir bundle XML (XFWB + XFZBs)
-        transmissionResult = await service.sendBundle(
-          masterMessage,
-          awbNumber,
-          houseMessages,
-          hawbNumbers
-        );
-      } else {
-        // === EDI (CARGO-IMP) ===
-        masterMessage = cargoImpFwb!.fullMessage;
-        
-        // Preparar FHLs si es consolidado y se quieren todos
-        let hawbNumbers: string[] = [];
-        
-        if (formData.hasHouses && sendMode === 'masterAndHouses' && cargoImpFhl) {
-          houseMessages = cargoImpFhl.map(f => f.fullMessage);
-          hawbNumbers = formData.houseBills.map(h => h.hawbNumber);
-        }
-
-        // Transmitir bundle EDI (FWB + FHLs)
-        transmissionResult = await service.sendBundle(
-          masterMessage,
-          awbNumber,
-          houseMessages,
-          hawbNumbers
-        );
+      // Preparar FHLs si es consolidado y se quieren todos
+      if (formData.hasHouses && sendMode === 'masterAndHouses' && cargoImpFhl) {
+        houseMessages = cargoImpFhl.map(f => f.fullMessage);
+        hawbNumbers = formData.houseBills.map(h => h.hawbNumber);
       }
+
+      // Transmitir bundle EDI (FWB + FHLs)
+      transmissionResult = await service.sendBundle(
+        masterMessage,
+        awbNumber,
+        houseMessages,
+        hawbNumbers
+      );
 
       // Crear resultado
       const result: CargoImpResult = {
@@ -1036,7 +1017,7 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
 
       // Notificar al componente padre si fue exitoso
       if (transmissionResult.allSuccess && onCopySuccess) {
-        onCopySuccess(formData.id, `TRANSMITTED (${messageFormat.toUpperCase()}): ${awbNumber}`);
+        onCopySuccess(formData.id, `TRANSMITTED (EDI): ${awbNumber}`);
       }
 
     } catch (error) {
@@ -1044,21 +1025,21 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
       setSendResult({
         allSuccess: false,
         summary: `❌ Error de transmisión: ${errorMessage}`,
-        fwbMessage: messageFormat === 'cargoxml' ? cargoXmlBundle?.xfwb?.xmlContent : cargoImpFwb?.fullMessage
+        fwbMessage: cargoImpFwb?.fullMessage
       });
     } finally {
       setIsTransmitting(false);
     }
-  }, [cargoImpFwb, cargoImpFhl, cargoXmlBundle, formData, sendMode, messageFormat, onCopySuccess]);
+  }, [cargoImpFwb, cargoImpFhl, formData, sendMode, onCopySuccess]);
 
   // Wrapper que muestra confirmación si hay errores de validación
   const handleTransmitToDescartes = useCallback(() => {
-    if (messageFormat === 'edi' && fwbHasValidationErrors) {
+    if (fwbHasValidationErrors) {
       setShowValidationConfirm(true);
       return;
     }
     executeTransmit();
-  }, [messageFormat, fwbHasValidationErrors, executeTransmit]);
+  }, [fwbHasValidationErrors, executeTransmit]);
 
   const copyToClipboard = useCallback((text: string) => {
     navigator.clipboard.writeText(text);
@@ -1092,16 +1073,17 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
   // ============================================================
   // TABS DE NAVEGACIÓN
   // ============================================================
-  const tabs = [
-    { id: 'parties', icon: Users, label: 'Partes' },
-    { id: 'cargo', icon: Package, label: 'Carga' },
-    { id: 'financials', icon: Banknote, label: 'Cargos' },
-    { id: 'security', icon: ShieldCheck, label: 'Seguridad' },
-    { id: 'houses', icon: Layers, label: formData.hasHouses ? `Houses (${formData.houseBills.length})` : 'Houses' },
-    { id: 'summary', icon: Eye, label: 'Resumen' },
-    { id: 'json', icon: Terminal, label: 'EDI' },
-    // { id: 'xml', icon: FileText, label: 'XML' }, // TEMPORALMENTE DESACTIVADO
+  const allTabs = [
+    { id: 'summary', icon: Eye, label: 'Resumen', roles: ['supervisor', 'admin', 'operator'] },
+    { id: 'json', icon: Terminal, label: 'EDI', roles: ['admin', 'operator'] },
+    { id: 'parties', icon: Users, label: 'Partes', roles: ['admin', 'operator'] },
+    { id: 'cargo', icon: Package, label: 'Carga', roles: ['admin', 'operator'] },
+    { id: 'financials', icon: Banknote, label: 'Cargos', roles: ['admin', 'operator'] },
+    { id: 'security', icon: ShieldCheck, label: 'Seguridad', roles: ['admin', 'operator'] },
+    { id: 'houses', icon: Layers, label: formData.hasHouses ? `Houses (${formData.houseBills.length})` : 'Houses', roles: ['admin', 'operator'] },
   ];
+  // Filtrar tabs según rol del usuario
+  const tabs = allTabs.filter(t => t.roles.includes(USER_ROLE));
 
   return (
     <div className="modal-overlay fixed inset-0 bg-black/50 flex items-center justify-center z-50 backdrop-blur-sm">
@@ -1203,12 +1185,12 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
             <div className="space-y-4">
               {/* Resumen Visual */}
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                <SummaryCard icon={<MapPin size={14}/>} label="Origen" value={formData.origin} color="blue" />
-                <SummaryCard icon={<MapPin size={14}/>} label="Destino" value={formData.destination} color="green" />
-                <SummaryCard icon={<Package size={14}/>} label="Piezas" value={formData.pieces} color="amber" />
-                <SummaryCard icon={<Scale size={14}/>} label="Peso" value={`${formData.weight} ${formData.weightUnit === 'KILOGRAM' ? 'KG' : 'LB'}`} color="purple" />
-                <SummaryCard icon={<Banknote size={14}/>} label="Total" value={`${formData.currency} ${grandTotal.toFixed(2)}`} color="green" />
-                <SummaryCard icon={<Plane size={14}/>} label="Vuelos" value={formData.flights.length} subvalue={formData.flights[0]?.flightNumber || 'Sin vuelo'} color="slate" />
+                <SummaryCard icon={<MapPin size={14}/>} label="Origen" value={formData.origin} />
+                <SummaryCard icon={<MapPin size={14}/>} label="Destino" value={formData.destination} />
+                <SummaryCard icon={<Package size={14}/>} label="Piezas" value={formData.pieces} />
+                <SummaryCard icon={<Scale size={14}/>} label="Peso" value={`${formData.weight} ${formData.weightUnit === 'KILOGRAM' ? 'KG' : 'LB'}`} />
+                <SummaryCard icon={<Banknote size={14}/>} label="Total" value={`${formData.currency} ${grandTotal.toFixed(2)}`} />
+                <SummaryCard icon={<Plane size={14}/>} label="Vuelos" value={formData.flights.length} subvalue={formData.flights[0]?.flightNumber || 'Sin vuelo'} />
               </div>
 
               {/* Partes Involucradas - Vista Rápida */}
@@ -1229,8 +1211,8 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
                   <p className="text-sm text-slate-500">{formData.consignee.address.street}</p>
                   <p className="text-sm text-slate-500">{formData.consignee.address.place}, {formData.consignee.address.countryCode}</p>
                 </div>
-                <div className="bg-white border border-amber-200 rounded-lg p-4 bg-amber-50/50">
-                  <div className="flex items-center gap-2 mb-3 text-amber-600">
+                <div className="bg-white border border-slate-200 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-3 text-slate-600">
                     <Briefcase size={16}/> <span className="font-bold text-sm">AGENT (Agente IATA)</span>
                   </div>
                   <p className="font-bold text-slate-800">{formData.agent.name}</p>
@@ -1286,91 +1268,12 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
                   </div>
                 </div>
                 
-                {/* Preview de goodsDescription que se enviará a Traxon */}
+                {/* GOODS DESCRIPTION preview — oculto temporalmente
                 <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-xs font-bold text-blue-800 flex items-center gap-1">
-                      <FileText size={12} />
-                      GOODS DESCRIPTION (Lo que se enviará a Traxon)
-                    </p>
-                    <span className="text-[10px] text-blue-600">Máx 25 chars/línea • Usa Enter para saltos</span>
-                  </div>
-                  
-                  {/* Campo editable para override */}
-                  <div className="mb-3">
-                    <label className="text-[10px] text-blue-700 font-bold mb-1 block">
-                      Override Manual (deja vacío para usar automático):
-                    </label>
-                    <textarea
-                      value={formData.goodsDescriptionOverride || ''}
-                      onChange={(e) => setFormData({...formData, goodsDescriptionOverride: e.target.value || undefined})}
-                      placeholder="Ej: FRESH CUT FLOWERS&#10;PERISHABLE CARGO"
-                      disabled={isReadOnly}
-                      className="w-full px-2 py-1.5 border border-blue-300 rounded text-sm font-mono bg-white focus:ring-2 focus:ring-blue-400 outline-none disabled:bg-slate-50 resize-none"
-                      rows={3}
-                      maxLength={200}
-                    />
-                    <div className="flex justify-between text-[10px] text-blue-500 mt-1">
-                      <span>Usa Enter para nueva línea (cada línea máx 25 chars)</span>
-                      <span>{(formData.goodsDescriptionOverride || '').length}/200</span>
-                    </div>
-                  </div>
-
-                  {/* Preview del resultado final */}
-                  <div className="border-t border-blue-200 pt-2">
-                    <p className="text-[10px] text-blue-700 font-bold mb-1">Preview Final:</p>
-                    {(() => {
-                      // Calcular el goodsDescription que se enviará
-                      const awbPrefix = formData.awbNumber?.split('-')[0] || '';
-                      let finalDescription = '';
-                      let source = '';
-                      
-                      // PRIORIDAD: Override manual > Automático
-                      if (formData.goodsDescriptionOverride) {
-                        finalDescription = formData.goodsDescriptionOverride.toUpperCase();
-                        source = 'override';
-                      } else if (formData.hasHouses) {
-                        finalDescription = 'CONSOLIDATION AS PER\nATTACHED DOCUMENTS';
-                        source = 'consolidado';
-                      } else if (['145', '985'].includes(awbPrefix)) {
-                        finalDescription = formData.commodityCode === '0609' || formData.commodityCode === '609' 
-                          ? 'CONSOLIDATE FLOWERS' 
-                          : 'CUT FLOWERS';
-                        source = 'latam';
-                      } else {
-                        finalDescription = sanitizeGoodsDescription(formData.description, 150) || 'FRESH CUT FLOWERS';
-                        source = 'auto';
-                      }
-                      
-                      // Mostrar cada línea separada
-                      const lines = finalDescription.split('\n');
-                      return (
-                        <div className="font-mono text-sm">
-                          {lines.map((line, idx) => (
-                            <div key={idx} className="flex items-center gap-2">
-                              <span className={`${line.length > 25 ? 'text-red-600 bg-red-100' : 'text-blue-900 bg-white'} px-2 py-0.5 rounded border ${line.length > 25 ? 'border-red-300' : 'border-blue-200'}`}>
-                                {line || '(vacío)'}
-                              </span>
-                              <span className={`text-[10px] ${line.length > 25 ? 'text-red-500 font-bold' : 'text-blue-500'}`}>
-                                ({line.length}/25)
-                                {line.length > 25 && ' ⚠️ EXCEDE'}
-                              </span>
-                            </div>
-                          ))}
-                          <p className="text-[10px] text-blue-600 mt-2">
-                            Total: {finalDescription.length} chars | {lines.length} líneas | 
-                            <span className={`ml-1 font-bold ${source === 'override' ? 'text-purple-600' : source === 'consolidado' ? 'text-amber-600' : source === 'latam' ? 'text-green-600' : 'text-blue-600'}`}>
-                              {source === 'override' && '✏️ Override manual'}
-                              {source === 'consolidado' && '📦 Consolidado (fijo)'}
-                              {source === 'latam' && '✈️ LATAM (específico)'}
-                              {source === 'auto' && '🔄 Saneado automático'}
-                            </span>
-                          </p>
-                        </div>
-                      );
-                    })()}
-                  </div>
+                  ...
                 </div>
+                */}
+
                 {formData.hasHouses && (
                   <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
                     <p className="text-xs text-amber-700 font-medium mb-2">
@@ -1394,12 +1297,10 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-bold text-emerald-800">
-                        {messageFormat === 'cargoxml' ? '📄 Cargo-XML (XFWB/XFZB)' : '📟 CARGO-IMP (EDI)'}
+                        📟 CARGO-IMP (EDI)
                       </p>
                       <p className="text-sm text-emerald-600">
-                        {messageFormat === 'cargoxml' 
-                          ? 'Formato: IATA Cargo-XML 3.0' 
-                          : 'Formato: FWB/16, FWB/17, FHL/4'}
+                        Formato: FWB/16, FWB/17, FHL/4
                       </p>
                       {formData.hasHouses && (
                         <p className="text-xs text-purple-500 mt-1">Consolidado: Master + {formData.houseBills.length} House(s)</p>
@@ -1409,26 +1310,12 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
                       )}
                     </div>
                     <div className="flex items-center gap-3">
-                      {/* Selector de FORMATO - TEMPORALMENTE SOLO EDI */}
+                      {/* Formato: EDI (CARGO-IMP) */}
                       <div className="flex flex-col items-end">
                         <label className="text-[10px] text-blue-600 uppercase font-bold mb-1">Formato</label>
                         <div className="text-sm border border-blue-300 rounded px-3 py-2 bg-blue-50 font-medium text-blue-700">
                           EDI (CARGO-IMP)
                         </div>
-                        {/* SELECTOR XML TEMPORALMENTE DESACTIVADO
-                        <select 
-                          value={messageFormat} 
-                          onChange={(e) => {
-                            const newFormat = e.target.value as 'cargoxml' | 'edi';
-                            setMessageFormat(newFormat);
-                            setActiveTab(newFormat === 'cargoxml' ? 'xml' : 'json');
-                          }}
-                          className="text-sm border border-blue-300 rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none bg-white font-medium"
-                        >
-                          <option value="cargoxml">Cargo-XML</option>
-                          <option value="edi">EDI (CARGO-IMP)</option>
-                        </select>
-                        */}
                       </div>
 
                       {/* Selector de CONTENIDO para consolidados */}
@@ -1441,12 +1328,10 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
                             className="text-sm border border-purple-300 rounded px-3 py-2 focus:ring-2 focus:ring-purple-500 outline-none bg-white"
                           >
                             <option value="masterAndHouses">
-                              {messageFormat === 'cargoxml' 
-                                ? `XFWB + ${formData.houseBills.length} XFZB` 
-                                : `FWB + ${formData.houseBills.length} FHL`}
+                              {`FWB + ${formData.houseBills.length} FHL`}
                             </option>
                             <option value="masterOnly">
-                              {messageFormat === 'cargoxml' ? 'Solo XFWB (Master)' : 'Solo FWB (Master)'}
+                              Solo FWB (Master)
                             </option>
                           </select>
                         </div>
@@ -1456,18 +1341,20 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
                       {hasDescartesConfig && (
                         <div className="flex flex-col items-end gap-1">
                           {/* Alerta informativa de validación (NO bloquea) */}
-                          {messageFormat === 'edi' && fwbHasValidationErrors && (
+                          {fwbHasValidationErrors && (
                             <span className="text-xs text-amber-600 font-semibold flex items-center gap-1">
                               <AlertTriangle size={12} /> {fwbValidationErrors} error(es) detectado(s) — revise antes de enviar
                             </span>
                           )}
                           <button 
-                            onClick={handleTransmitToDescartes}
-                            disabled={messageFormat === 'cargoxml' 
-                              ? !cargoXmlBundle?.xfwb?.xmlContent 
-                              : !cargoImpFwb?.fullMessage || isTransmitting}
+                            onClick={() => {
+                              setPreTransmitTab('validation');
+                              setShowPreTransmitReview(true);
+                            }}
+                            disabled={
+                              !cargoImpFwb?.fullMessage || isTransmitting}
                             className={`${
-                              messageFormat === 'edi' && fwbHasValidationErrors
+                              fwbHasValidationErrors
                                 ? 'bg-amber-500 hover:bg-amber-600'
                                 : 'bg-emerald-600 hover:bg-emerald-700'
                             } disabled:bg-slate-400 text-white px-6 py-3 rounded-lg flex items-center gap-2 font-bold transition-all shadow-lg hover:shadow-xl`}
@@ -1482,7 +1369,7 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
                             </>
                           ) : (
                             <>
-                              <Upload size={18} /> {messageFormat === 'edi' && fwbHasValidationErrors ? 'Transmitir (con errores)' : 'Transmitir a Descartes'}
+                              <Upload size={18} /> {fwbHasValidationErrors ? 'Transmitir (con errores)' : 'Transmitir a Descartes'}
                             </>
                           )}
                           </button>
@@ -2284,7 +2171,9 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
                       {!isReadOnly && (
                         <button 
                           onClick={() => {
-                            const currentCodes = formData.specialHandlingCodes || [];
+                            const currentCodes = formData.specialHandlingCodes && formData.specialHandlingCodes.length > 0 
+                              ? formData.specialHandlingCodes 
+                              : getDefaultSphCodes(getAwbPrefix(formData.awbNumber));
                             setFormData({...formData, specialHandlingCodes: currentCodes.filter(c => c !== code)});
                           }}
                           className="ml-1 hover:bg-purple-700 rounded-full p-0.5"
@@ -2302,7 +2191,9 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
                     <p className="text-xs text-purple-600 mb-2 font-medium">Agregar código adicional:</p>
                     <div className="flex flex-wrap gap-2">
                       {Object.entries(AVAILABLE_SPH_CODES).map(([key, info]) => {
-                        const currentCodes = formData.specialHandlingCodes || getDefaultSphCodes(getAwbPrefix(formData.awbNumber));
+                        const currentCodes = formData.specialHandlingCodes && formData.specialHandlingCodes.length > 0 
+                          ? formData.specialHandlingCodes 
+                          : getDefaultSphCodes(getAwbPrefix(formData.awbNumber));
                         const isSelected = currentCodes.includes(key);
                         return (
                           <button
@@ -2560,7 +2451,6 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
                 </div>
               )}
 
-
               {/* ========== CONTENIDO EDI (CARGO-IMP) ========== */}
               {/* Header informativo para EDI */}
               <div className="mb-4 p-3 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-lg">
@@ -2648,112 +2538,125 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
                     </div>
                   )}
 
-                  {/* Error de generación */}
-                  {cargoImpGenError && (
-                    <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4 flex items-center gap-2 text-red-700">
-                      <AlertTriangle size={16}/> Error generando EDI: {cargoImpGenError}
-                    </div>
-                  )}
-
-                  {/* Visor de segmentos CARGO-IMP */}
-                  <div className="flex-1 overflow-y-auto">
+                  {/* Visor de segmentos CARGO-IMP — Colapsable */}
+                  <div className="flex-1 overflow-y-auto space-y-4">
+                    {/* ===== FWB (Master) — Abierto por defecto ===== */}
                     {activeJsonTab === 'fwb' && cargoImpFwb && (
-                      <>
-                        {/* Panel de Validación IATA - FWB */}
-                        <CargoImpValidationPanel
-                          message={cargoImpFwb}
-                          policy={cargoImpPolicyInfo?.policy}
-                          onValidationChange={({ canSend, errorCount }) => {
-                            setFwbHasValidationErrors(errorCount > 0);
-                            setFwbValidationErrors(errorCount);
-                          }}
-                        />
-                        <CargoImpSegmentViewer 
-                          message={cargoImpFwb}
-                          onSegmentChange={(segmentCode, newValue) => {
-                            // Por ahora solo log, en futuro permitir edición
-                            console.log(`[CARGO-IMP] Editando segmento ${segmentCode}:`, newValue);
-                          }}
-                          onToggleSegment={handleCargoImpToggleSegment}
-                        />
-                      </>
-                    )}
-                    {activeJsonTab === 'fhl' && (
-                      <>
-                        {cargoImpFhl && cargoImpFhl.length > 0 ? (
-                          <>
-                            <div className="mb-3 p-2 bg-purple-50 border border-purple-200 rounded-lg">
-                              <span className="text-sm font-bold text-purple-800">
-                                📦 {cargoImpFhl.length} Mensaje(s) FHL
+                      <details open className="border border-slate-200 rounded-lg overflow-hidden group">
+                        <summary className="px-4 py-2.5 bg-purple-50 border-b border-purple-200 flex items-center justify-between cursor-pointer select-none hover:brightness-95 transition-all">
+                          <span className="font-bold text-purple-800 flex items-center gap-2">
+                            <ChevronRight size={14} className="text-purple-400 transition-transform group-open:rotate-90" />
+                            <FileText size={14} />
+                            FWB/{cargoImpFwb.messageVersion?.split('/')[1] || '16'} (Master)
+                            {fwbHasValidationErrors && (
+                              <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-bold">
+                                {fwbValidationErrors} error{fwbValidationErrors > 1 ? 'es' : ''}
                               </span>
-                            </div>
-                            {cargoImpFhl.map((fhlMsg: any, idx: number) => (
-                              <div key={idx} className="mb-4">
-                                <div className="bg-purple-100 px-3 py-2 rounded-t-lg font-bold text-purple-800 flex items-center gap-2">
-                                  <Layers size={14}/>
-                                  FHL #{idx + 1}
-                                </div>
-                                {/* Panel de Validación IATA - FHL */}
-                                <CargoImpValidationPanel
-                                  message={fhlMsg}
-                                  policy={cargoImpPolicyInfo?.policy}
-                                  defaultCollapsed={true}
-                                  compact={true}
-                                />
-                                <CargoImpSegmentViewer 
-                                  message={fhlMsg}
-                                  onSegmentChange={(segmentCode, newValue) => {
-                                    console.log(`[CARGO-IMP FHL ${idx}] Editando segmento ${segmentCode}:`, newValue);
-                                  }}
-                                  onToggleSegment={handleCargoImpToggleSegment}
-                                />
+                            )}
+                          </span>
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              copyToClipboard(cargoImpFwb.fullMessage || '');
+                            }}
+                            className="px-2 py-1 text-xs bg-purple-100 hover:bg-purple-200 text-purple-700 rounded flex items-center gap-1 transition-colors"
+                          >
+                            <Copy size={12} /> Copiar FWB
+                          </button>
+                        </summary>
+                        <div className="p-2">
+                          {/* Panel de Validación IATA - FWB */}
+                          <CargoImpValidationPanel
+                            message={cargoImpFwb}
+                            policy={cargoImpPolicyInfo?.policy}
+                            defaultCollapsed={true}
+                            onValidationChange={({ canSend, errorCount }) => {
+                              setFwbHasValidationErrors(errorCount > 0);
+                              setFwbValidationErrors(errorCount);
+                            }}
+                          />
+                          <CargoImpSegmentViewer 
+                            message={cargoImpFwb}
+                            onSegmentChange={(segmentCode, newValue) => {
+                              console.log(`[CARGO-IMP] Editando segmento ${segmentCode}:`, newValue);
+                            }}
+                            onToggleSegment={handleCargoImpToggleSegment}
+                          />
+                        </div>
+                      </details>
+                    )}
+
+                    {/* ===== FHL (Houses) — Colapsado por defecto ===== */}
+                    {activeJsonTab === 'fhl' && formData.hasHouses && cargoImpFhl && cargoImpFhl.length > 0 && (
+                      <details open className="border border-slate-200 rounded-lg overflow-hidden group">
+                        <summary className="px-4 py-2.5 bg-sky-50 border-b border-sky-200 flex items-center justify-between cursor-pointer select-none hover:brightness-95 transition-all">
+                          <span className="font-bold text-sky-800 flex items-center gap-2">
+                            <ChevronRight size={14} className="text-sky-400 transition-transform group-open:rotate-90" />
+                            <Layers size={14} />
+                            FHL/4 (Houses) — {cargoImpFhl.length} mensaje{cargoImpFhl.length > 1 ? 's' : ''}
+                          </span>
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              copyToClipboard(cargoImpConcatFhl || '');
+                            }}
+                            className="px-2 py-1 text-xs bg-sky-100 hover:bg-sky-200 text-sky-700 rounded flex items-center gap-1 transition-colors"
+                          >
+                            <Copy size={12} /> Copiar FHL
+                          </button>
+                        </summary>
+                        <div className="p-2 space-y-4">
+                          {cargoImpFhl.map((fhlMsg: any, idx: number) => (
+                            <div key={idx}>
+                              <div className="bg-sky-100 px-3 py-2 rounded-t-lg font-bold text-sky-800 flex items-center gap-2">
+                                <Layers size={14}/>
+                                FHL #{idx + 1}: {formData.houseBills?.[idx]?.hawbNumber || `House ${idx + 1}`}
                               </div>
-                            ))}
-                          </>
-                        ) : (
-                          <div className="text-slate-400 italic p-4 text-center">
-                            No hay houses en este envío. FHL solo se genera para envíos consolidados.
-                          </div>
-                        )}
-                      </>
+                              {/* Panel de Validación IATA - FHL */}
+                              <CargoImpValidationPanel
+                                message={fhlMsg}
+                                policy={cargoImpPolicyInfo?.policy}
+                                defaultCollapsed={true}
+                                compact={true}
+                              />
+                              <CargoImpSegmentViewer 
+                                message={fhlMsg}
+                                onSegmentChange={(segmentCode, newValue) => {
+                                  console.log(`[CARGO-IMP FHL ${idx}] Editando segmento ${segmentCode}:`, newValue);
+                                }}
+                                onToggleSegment={handleCargoImpToggleSegment}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </details>
                     )}
                   </div>
 
                   {/* Vista EDI Raw (Colapsable) */}
-                  {cargoImpFwb && (
+                  {activeJsonTab === 'fwb' && cargoImpFwb && (
                     <details className="mt-4">
                       <summary className="cursor-pointer text-sm text-slate-600 hover:text-slate-800 flex items-center gap-2 py-2">
-                        <Terminal size={14}/> Ver EDI Raw (Formato plano)
+                        <Terminal size={14}/> Ver EDI Raw FWB (Formato plano)
                       </summary>
                       <div className="bg-slate-900 text-green-400 p-4 rounded-lg overflow-auto font-mono text-xs leading-relaxed max-h-64 mt-2">
                         <pre>{cargoImpFwb.fullMessage}</pre>
                       </div>
                     </details>
                   )}
+                  {activeJsonTab === 'fhl' && cargoImpConcatFhl && (
+                    <details className="mt-4">
+                      <summary className="cursor-pointer text-sm text-slate-600 hover:text-slate-800 flex items-center gap-2 py-2">
+                        <Terminal size={14}/> Ver EDI Raw FHL (Formato plano)
+                      </summary>
+                      <div className="bg-slate-900 text-green-400 p-4 rounded-lg overflow-auto font-mono text-xs leading-relaxed max-h-64 mt-2">
+                        <pre>{cargoImpConcatFhl}</pre>
+                      </div>
+                    </details>
+                  )}
             </div>
           )}
 
-          {/* ========== TAB: XML (CARGO-XML) ========== */}
-          {activeTab === 'xml' && (
-            <div className="h-full flex flex-col">
-              {cargoXmlBundle ? (
-                <CargoXmlViewer 
-                  bundle={cargoXmlBundle}
-                  onCopy={(content, type) => {
-                    console.log(`[CARGO-XML] Copiado ${type}`);
-                  }}
-                />
-              ) : (
-                <div className="flex items-center justify-center h-full text-slate-400">
-                  <div className="text-center">
-                    <FileText size={48} className="mx-auto mb-4 opacity-50" />
-                    <p>No se pudo generar el Cargo-XML</p>
-                    <p className="text-sm">Verifique los datos del envío</p>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
         </div>
         
         {/* ============================================================ */}
@@ -2783,6 +2686,384 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
         </div>
       </div>
       
+      {/* ============================================================ */}
+      {/* MODAL DE REVISIÓN PRE-TRANSMISIÓN */}
+      {/* Muestra errores y alertas antes de enviar */}
+      {/* ============================================================ */}
+      {showPreTransmitReview && cargoImpFwb && (() => {
+        // Validar FWB
+        const fwbValidation = validateCargoImpMessage(cargoImpFwb, cargoImpPolicyInfo?.policy);
+        
+        // Validar FHLs
+        const fhlValidations = (cargoImpFhl || []).map((fhlMsg: any, idx: number) => ({
+          index: idx,
+          hawb: formData?.houseBills?.[idx]?.hawbNumber || `House #${idx + 1}`,
+          result: validateCargoImpMessage(fhlMsg, cargoImpPolicyInfo?.policy)
+        }));
+        
+        // Agrupar errores FWB por segmento con descripciones legibles
+        const segmentLabels: Record<string, string> = {
+          'FWB': 'Header', 'AWB': 'N° Guía', 'FLT': 'Vuelo', 'RTG': 'Ruta',
+          'SHP': 'Exportador (Shipper)', 'CNE': 'Consignatario (Consignee)', 'AGT': 'Agente',
+          'SSR': 'Serv. Especial', 'ACC': 'Contabilidad', 'CVD': 'Cargos',
+          'RTD': 'Tarifas', 'NG': 'Mercancía', 'NH': 'Código HTS', 'NV': 'Volumen',
+          'NS': 'SLAC', 'OTH': 'Otros Cargos', 'PPD': 'Prepaid', 'COL': 'Collect',
+          'CER': 'Certificación', 'ISU': 'Emisión', 'REF': 'Referencia',
+          'SPH': 'Manejo Especial', 'OCI': 'Info Aduanas', 'NFY': 'Notificar', 'FTR': 'Footer',
+          'MBI': 'Master Info', 'HBS': 'Resumen House', 'HTS': 'Arancelario', 'TXT': 'Texto Libre'
+        };
+        
+        const fwbErrors = fwbValidation.allIssues.filter(i => i.severity === 'error');
+        const fwbWarnings = fwbValidation.allIssues.filter(i => i.severity === 'warning');
+        const totalFhlErrors = fhlValidations.reduce((sum, f) => sum + f.result.totalErrors, 0);
+        const totalFhlWarnings = fhlValidations.reduce((sum, f) => sum + f.result.totalWarnings, 0);
+        const totalErrors = fwbErrors.length + totalFhlErrors;
+        const totalWarnings = fwbWarnings.length + totalFhlWarnings;
+        const allClear = totalErrors === 0 && totalWarnings === 0;
+        
+        // Contar houses con problemas vs sin problemas
+        const housesWithIssues = fhlValidations.filter(f => f.result.totalErrors > 0 || f.result.totalWarnings > 0).length;
+        const housesOk = fhlValidations.length - housesWithIssues;
+
+        return (
+          <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full mx-4 overflow-hidden max-h-[85vh] flex flex-col">
+              {/* Header */}
+              <div className={`px-6 py-4 flex items-center gap-3 ${
+                allClear 
+                  ? 'bg-gradient-to-r from-emerald-500 to-green-500' 
+                  : totalErrors > 0 
+                    ? 'bg-gradient-to-r from-red-500 to-orange-500' 
+                    : 'bg-gradient-to-r from-amber-400 to-orange-400'
+              }`}>
+                {allClear ? (
+                  <CheckCircle2 size={28} className="text-white" />
+                ) : totalErrors > 0 ? (
+                  <AlertTriangle size={28} className="text-white" />
+                ) : (
+                  <Info size={28} className="text-white" />
+                )}
+                <div>
+                  <h3 className="text-white font-bold text-lg">
+                    {allClear ? 'Listo para enviar' : 'Revisión antes de enviar'}
+                  </h3>
+                  <p className="text-white/80 text-xs">
+                    AWB: {formData?.awbNumber} — {formData?.hasHouses ? `Consolidado (${formData.houseBills.length} houses)` : 'Directo'}
+                  </p>
+                </div>
+              </div>
+              
+              {/* Resumen rápido */}
+              <div className="px-6 py-3 bg-slate-50 border-b border-slate-200 flex flex-wrap gap-3">
+                {totalErrors > 0 && (
+                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-bold bg-red-100 text-red-700">
+                    <AlertTriangle size={14} /> {totalErrors} Error{totalErrors > 1 ? 'es' : ''}
+                  </span>
+                )}
+                {totalWarnings > 0 && (
+                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-bold bg-amber-100 text-amber-700">
+                    <Info size={14} /> {totalWarnings} Alerta{totalWarnings > 1 ? 's' : ''}
+                  </span>
+                )}
+                {allClear && (
+                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-bold bg-green-100 text-green-700">
+                    <CheckCircle2 size={14} /> Sin problemas detectados
+                  </span>
+                )}
+              </div>
+
+              {/* Tabs de navegación */}
+              <div className="px-6 py-2 bg-white border-b border-slate-200 flex gap-1">
+                <button
+                  onClick={() => setPreTransmitTab('validation')}
+                  className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all flex items-center gap-2 ${
+                    preTransmitTab === 'validation'
+                      ? 'bg-purple-100 text-purple-700'
+                      : 'text-slate-500 hover:bg-slate-100'
+                  }`}
+                >
+                  <ShieldCheck size={14} />
+                  Validación
+                  {(totalErrors > 0 || totalWarnings > 0) && (
+                    <span className={`text-xs px-1.5 rounded-full ${
+                      totalErrors > 0 ? 'bg-red-500 text-white' : 'bg-amber-400 text-white'
+                    }`}>
+                      {totalErrors + totalWarnings}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => setPreTransmitTab('preview')}
+                  className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all flex items-center gap-2 ${
+                    preTransmitTab === 'preview'
+                      ? 'bg-sky-100 text-sky-700'
+                      : 'text-slate-500 hover:bg-slate-100'
+                  }`}
+                >
+                  <Terminal size={14} />
+                  Preview EDI
+                  <span className="text-xs bg-slate-200 text-slate-600 px-1.5 rounded-full">
+                    {1 + (cargoImpFhl?.length || 0)}
+                  </span>
+                </button>
+              </div>
+
+              {/* Contenido scrolleable */}
+              <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+                
+                {/* ==================== TAB: VALIDACIÓN ==================== */}
+                {preTransmitTab === 'validation' && (
+                  <>
+                {/* Sección colapsable: Master (FWB) — abierto por defecto */}
+                <details open className="border border-slate-200 rounded-lg overflow-hidden group">
+                  <summary className={`px-4 py-2.5 flex items-center justify-between cursor-pointer select-none hover:brightness-95 transition-all ${
+                    fwbErrors.length > 0 ? 'bg-red-50' : fwbWarnings.length > 0 ? 'bg-amber-50' : 'bg-green-50'
+                  }`}>
+                    <span className="font-bold text-sm flex items-center gap-2">
+                      <ChevronRight size={14} className="text-slate-400 transition-transform group-open:rotate-90" />
+                      <FileText size={14} className="text-purple-600" /> 
+                      Master (FWB)
+                    </span>
+                    <div className="flex items-center gap-2">
+                      {fwbErrors.length > 0 && (
+                        <span className="text-xs font-bold text-red-600">{fwbErrors.length} error{fwbErrors.length > 1 ? 'es' : ''}</span>
+                      )}
+                      {fwbWarnings.length > 0 && (
+                        <span className="text-xs font-bold text-amber-600">{fwbWarnings.length} alerta{fwbWarnings.length > 1 ? 's' : ''}</span>
+                      )}
+                      {fwbErrors.length === 0 && fwbWarnings.length === 0 && (
+                        <span className="text-xs font-bold text-green-600 flex items-center gap-1"><CheckCircle2 size={12} /> OK</span>
+                      )}
+                    </div>
+                  </summary>
+                  
+                  {(fwbErrors.length > 0 || fwbWarnings.length > 0) ? (
+                    <div className="p-3 space-y-2 border-t border-slate-100">
+                      {[...fwbErrors, ...fwbWarnings].map((issue, i) => (
+                        <div key={i} className={`flex items-start gap-2 p-2 rounded-lg text-sm ${
+                          issue.severity === 'error' ? 'bg-red-50 text-red-800' : 'bg-amber-50 text-amber-800'
+                        }`}>
+                          <span className="mt-0.5 flex-shrink-0">
+                            {issue.severity === 'error' ? <AlertTriangle size={14} className="text-red-500" /> : <Info size={14} className="text-amber-500" />}
+                          </span>
+                          <div>
+                            <span className="font-bold text-xs bg-white/60 px-1.5 py-0.5 rounded mr-2">
+                              {segmentLabels[issue.segment] || issue.segment}
+                            </span>
+                            {issue.message}
+                            {issue.suggestion && (
+                              <p className="text-xs mt-0.5 opacity-70">Sugerencia: {issue.suggestion}</p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-3 border-t border-slate-100 text-sm text-green-600 flex items-center gap-2">
+                      <CheckCircle2 size={14} /> Sin problemas en el Master FWB
+                    </div>
+                  )}
+                </details>
+
+                {/* Sección colapsable: Houses (FHL) — cerrado por defecto */}
+                {fhlValidations.length > 0 && (
+                  <details className="border border-slate-200 rounded-lg overflow-hidden group">
+                    <summary className={`px-4 py-2.5 flex items-center justify-between cursor-pointer select-none hover:brightness-95 transition-all ${
+                      totalFhlErrors > 0 ? 'bg-red-50' : totalFhlWarnings > 0 ? 'bg-amber-50' : 'bg-green-50'
+                    }`}>
+                      <span className="font-bold text-sm flex items-center gap-2">
+                        <ChevronRight size={14} className="text-slate-400 transition-transform group-open:rotate-90" />
+                        <Layers size={14} className="text-sky-600" />
+                        Houses (FHL) — {fhlValidations.length} mensaje{fhlValidations.length > 1 ? 's' : ''}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        {housesOk > 0 && (
+                          <span className="text-xs font-bold text-green-600">{housesOk} OK</span>
+                        )}
+                        {totalFhlErrors > 0 && (
+                          <span className="text-xs font-bold text-red-600">{housesWithIssues} con error{housesWithIssues > 1 ? 'es' : ''}</span>
+                        )}
+                        {totalFhlErrors === 0 && totalFhlWarnings > 0 && (
+                          <span className="text-xs font-bold text-amber-600">{housesWithIssues} con alerta{housesWithIssues > 1 ? 's' : ''}</span>
+                        )}
+                        {totalFhlErrors === 0 && totalFhlWarnings === 0 && (
+                          <span className="text-xs font-bold text-green-600 flex items-center gap-1"><CheckCircle2 size={12} /> Todas OK</span>
+                        )}
+                      </div>
+                    </summary>
+                    
+                    <div className="p-3 space-y-2 border-t border-slate-100 max-h-[40vh] overflow-y-auto">
+                      {fhlValidations.map((fv) => {
+                        const errors = fv.result.allIssues.filter(i => i.severity === 'error');
+                        const warnings = fv.result.allIssues.filter(i => i.severity === 'warning');
+                        const hasIssues = errors.length > 0 || warnings.length > 0;
+                        
+                        if (!hasIssues) {
+                          return (
+                            <div key={fv.index} className="flex items-center gap-2 p-2 bg-green-50 rounded-lg text-sm text-green-700">
+                              <CheckCircle2 size={14} />
+                              <span className="font-mono font-bold">{fv.hawb}</span>
+                              <span className="text-xs">— Sin problemas</span>
+                            </div>
+                          );
+                        }
+                        
+                        return (
+                          <details key={fv.index} className="border border-slate-100 rounded-lg overflow-hidden group/house">
+                            <summary className={`px-3 py-1.5 text-sm font-bold flex items-center gap-2 cursor-pointer select-none hover:brightness-95 ${
+                              errors.length > 0 ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'
+                            }`}>
+                              <ChevronRight size={12} className="text-slate-400 transition-transform group-open/house:rotate-90" />
+                              <span className="font-mono">{fv.hawb}</span>
+                              {errors.length > 0 && <span className="text-xs">({errors.length} error{errors.length > 1 ? 'es' : ''})</span>}
+                              {warnings.length > 0 && <span className="text-xs">({warnings.length} alerta{warnings.length > 1 ? 's' : ''})</span>}
+                            </summary>
+                            <div className="p-2 space-y-1 border-t border-slate-100">
+                              {[...errors, ...warnings].map((issue, j) => (
+                                <div key={j} className={`flex items-start gap-2 p-1.5 rounded text-xs ${
+                                  issue.severity === 'error' ? 'text-red-700' : 'text-amber-700'
+                                }`}>
+                                  <span className="mt-0.5 flex-shrink-0">
+                                    {issue.severity === 'error' ? <AlertTriangle size={12} /> : <Info size={12} />}
+                                  </span>
+                                  <div>
+                                    <span className="font-bold bg-white/60 px-1 py-0.5 rounded mr-1">
+                                      {segmentLabels[issue.segment] || issue.segment}
+                                    </span>
+                                    {issue.message}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        );
+                      })}
+                    </div>
+                  </details>
+                )}
+
+                {/* Mensaje si todo está OK */}
+                {allClear && (
+                  <div className="text-center py-4">
+                    <CheckCircle2 size={48} className="mx-auto text-green-400 mb-2" />
+                    <p className="text-green-700 font-bold text-lg">Todo en orden</p>
+                    <p className="text-slate-500 text-sm">No se detectaron errores ni alertas en los mensajes EDI.</p>
+                  </div>
+                )}
+                  </>
+                )}
+
+                {/* ==================== TAB: PREVIEW EDI ==================== */}
+                {preTransmitTab === 'preview' && (
+                  <div className="space-y-4">
+                    {/* FWB Preview — abierto por defecto */}
+                    <details open className="border border-slate-200 rounded-lg overflow-hidden group">
+                      <summary className="px-4 py-2.5 bg-purple-50 border-b border-purple-200 flex items-center justify-between cursor-pointer select-none hover:brightness-95 transition-all">
+                        <span className="font-bold text-purple-800 flex items-center gap-2">
+                          <ChevronRight size={14} className="text-purple-400 transition-transform group-open:rotate-90" />
+                          <FileText size={14} />
+                          FWB 16 (Master)
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            navigator.clipboard.writeText(cargoImpFwb.fullMessage || '');
+                          }}
+                          className="px-2 py-1 text-xs bg-purple-100 hover:bg-purple-200 text-purple-700 rounded flex items-center gap-1 transition-colors"
+                        >
+                          <Copy size={12} /> Copiar
+                        </button>
+                      </summary>
+                      <div className="bg-slate-900 text-green-400 p-4 overflow-x-auto font-mono text-xs leading-relaxed max-h-[40vh]">
+                        <pre className="whitespace-pre-wrap">{cargoImpFwb.fullMessage || 'Sin contenido generado'}</pre>
+                      </div>
+                    </details>
+
+                    {/* FHL Previews — colapsado por defecto */}
+                    {cargoImpFhl && cargoImpFhl.length > 0 && (
+                      <details className="border border-slate-200 rounded-lg overflow-hidden group">
+                        <summary className="px-4 py-2.5 bg-sky-50 border-b border-sky-200 flex items-center justify-between cursor-pointer select-none hover:brightness-95 transition-all">
+                          <span className="font-bold text-sky-800 flex items-center gap-2">
+                            <ChevronRight size={14} className="text-sky-400 transition-transform group-open:rotate-90" />
+                            <Layers size={14} />
+                            FHL (Houses) — {cargoImpFhl.length} mensaje{cargoImpFhl.length > 1 ? 's' : ''}
+                          </span>
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              const allFhl = cargoImpFhl.map((f: any) => f.fullMessage).join('\n\n');
+                              navigator.clipboard.writeText(allFhl);
+                            }}
+                            className="px-2 py-1 text-xs bg-sky-100 hover:bg-sky-200 text-sky-700 rounded flex items-center gap-1 transition-colors"
+                          >
+                            <Copy size={12} /> Copiar todos
+                          </button>
+                        </summary>
+                        <div className="bg-slate-900 p-4 overflow-y-auto max-h-[40vh] space-y-4">
+                          {cargoImpFhl.map((fhlMsg: any, idx: number) => (
+                            <div key={idx}>
+                              <div className="text-sky-400 font-bold text-xs mb-1 flex items-center justify-between">
+                                <span>— FHL #{idx + 1}: {formData?.houseBills?.[idx]?.hawbNumber || 'House ' + (idx + 1)} —</span>
+                                <button
+                                  onClick={() => navigator.clipboard.writeText(fhlMsg.fullMessage || '')}
+                                  className="text-slate-500 hover:text-sky-400 transition-colors"
+                                >
+                                  <Copy size={10} />
+                                </button>
+                              </div>
+                              <pre className="text-green-400 font-mono text-xs leading-relaxed whitespace-pre-wrap">{fhlMsg.fullMessage || 'Sin contenido'}</pre>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+
+                    {/* Info adicional */}
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start gap-2 text-sm text-blue-700">
+                      <Info size={14} className="mt-0.5 flex-shrink-0" />
+                      <div>
+                        <span className="font-bold">Preview del mensaje EDI</span> — Este es el contenido exacto que será enviado a Descartes GLN.
+                        Revisa que la información sea correcta antes de transmitir.
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer con botones */}
+              <div className="px-6 py-4 bg-slate-50 flex justify-between items-center border-t border-slate-200">
+                <button
+                  onClick={() => setShowPreTransmitReview(false)}
+                  className="px-5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg font-semibold transition-colors"
+                >
+                  Volver
+                </button>
+                <div className="flex items-center gap-3">
+                  {totalErrors > 0 && (
+                    <span className="text-xs text-red-600 font-medium">Enviar con {totalErrors} error{totalErrors > 1 ? 'es' : ''}</span>
+                  )}
+                  <button
+                    onClick={() => {
+                      setShowPreTransmitReview(false);
+                      handleTransmitToDescartes();
+                    }}
+                    disabled={isTransmitting}
+                    className={`px-6 py-2.5 rounded-lg font-bold transition-all flex items-center gap-2 shadow-lg ${
+                      totalErrors > 0
+                        ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                        : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                    }`}
+                  >
+                    <Send size={16} />
+                    {totalErrors > 0 ? 'Enviar de todas formas' : 'Enviar a Descartes'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Dialog de Confirmación — Enviar con errores de validación */}
       {showValidationConfirm && (
         <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 backdrop-blur-sm">

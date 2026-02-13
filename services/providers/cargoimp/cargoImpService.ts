@@ -450,6 +450,7 @@ export class CargoImpService {
       type: 'FWB',
       version: fwbVersion,
       awbNumber: shipment.awbNumber,
+      isConsolidation: !!shipment.hasHouses,
       segments,
       fullMessage,
       isValid: errors.length === 0,
@@ -1256,17 +1257,27 @@ export class CargoImpService {
       const firstRate = shipment.rates[0];
       const commodityCode = firstRate?.commodityCode || '';
       
-      // Consolidados: NC/CONSOLIDATE FLOWERS
-      if (shipment.hasHouses && (commodityCode === '0609' || commodityCode === '609')) {
-        return '/NC/CONSOLIDATE FLOWERS';
+      if (shipment.hasHouses) {
+        // Consolidados LATAM: siempre /NC/
+        if (commodityCode === '0609' || commodityCode === '609') {
+          return '/NC/CONSOLIDATE FLOWERS';
+        }
+        const description = this.getNatureOfGoods(shipment, policy);
+        return `/NC/${description}`;
       }
       
       // Directas LATAM: NG/CUT FLOWERS (no FRESHPERISH)
       return '/NG/CUT FLOWERS';
     }
     
-    // Resto de aerolíneas: usar descripción normal
+    // Resto de aerolíneas
     const description = this.getNatureOfGoods(shipment, policy);
+    
+    // Consolidados (con houses/HAWBs): usar /NC/ (Nature of goods - Consolidated)
+    // Directos (sin houses): usar /NG/ (Nature of Goods)
+    if (shipment.hasHouses) {
+      return `/NC/${description}`;
+    }
     return `/NG/${description}`;
   }
 
@@ -1544,26 +1555,17 @@ export class CargoImpService {
     const shipperCountry = shipment.shipper.address.countryCode.toUpperCase();
     const consigneeTin = shipment.consignee.taxId || shipment.consignee.accountNumber || '';
     
-    let oci = 'OCI';
+    // Sin Tax ID del consignatario → no generar línea OCI (campo opcional)
+    if (!consigneeTin.trim()) return '';
     
-    // Lógica según país de origen (Ecuador vs otros)
-    if (shipperCountry === 'EC') {
-      // Ecuador: sin prefijo EORI
-      if (consigneeTin) {
-        oci += `/${consigneeCountry}/CNE/T/${consigneeTin.replace(/\s/g, '')}`;
-      } else {
-        oci += `/${consigneeCountry}/CNE/T/EORI`;
-      }
-    } else {
-      // Otros países: con prefijo EORI
-      if (consigneeTin) {
-        oci += `/${consigneeCountry}/CNE/T/EORI${consigneeTin.replace(/\s/g, '')}`;
-      } else {
-        oci += `/${consigneeCountry}/CNE/T/EORI`;
-      }
-    }
+    const cleanTin = consigneeTin.replace(/\s/g, '');
     
-    return oci;
+    // US y CA no usan prefijo EORI, tampoco Ecuador origen
+    const noEoriPrefix = shipperCountry === 'EC' || consigneeCountry === 'US' || consigneeCountry === 'CA';
+    
+    return noEoriPrefix
+      ? `OCI/${consigneeCountry}/CNE/T/${cleanTin}`
+      : `OCI/${consigneeCountry}/CNE/T/EORI${cleanTin}`;
   }
 
   /**
@@ -1754,7 +1756,8 @@ export class CargoImpService {
     const rawNature = normalize(house.natureOfGoods, 70, true, false) || '';
     // Limpiar: quitar todo desde "HS" en adelante (ej: "FRESH CUT FLOWERS PERISHABLE HS 060311" → "FRESH CUT FLOWERS PERISHABLE")
     const fullNatureOfGoods = rawNature.replace(/\s*HS\s*.*/i, '').trim();
-    const txtContent = fullNatureOfGoods ? `TXT/${fullNatureOfGoods}` : '';
+    const slacSuffix = house.pieces ? ` SLAC-${house.pieces}` : '';
+    const txtContent = fullNatureOfGoods ? `TXT/${fullNatureOfGoods}${slacSuffix}` : '';
     segments.push(this.createFhlSegment('TXT', txtContent, 4, isTxtEnabled && !!txtContent, []));
     
     // HTS - Harmonized codes (si existen y está habilitado)
@@ -1884,7 +1887,8 @@ export class CargoImpService {
     const rawNature = normalize(house.natureOfGoods, 70, true, false) || '';
     // Limpiar: quitar todo desde "HS" en adelante (ej: "FRESH CUT FLOWERS PERISHABLE HS 060311" → "FRESH CUT FLOWERS PERISHABLE")
     const fullNatureOfGoods = rawNature.replace(/\s*HS\s*.*/i, '').trim();
-    const txtContent = fullNatureOfGoods ? `TXT/${fullNatureOfGoods}` : '';
+    const slacSuffix = house.pieces ? ` SLAC-${house.pieces}` : '';
+    const txtContent = fullNatureOfGoods ? `TXT/${fullNatureOfGoods}${slacSuffix}` : '';
     if (txtContent) {
       segments.push(this.createFhlSegment('TXT', txtContent, 3, true, []));
     }
@@ -2005,16 +2009,18 @@ export class CargoImpService {
     const consigneeCountry = consignee.address?.countryCode?.toUpperCase() || 'US';
     const consigneeTin = consignee.taxId || consignee.accountNumber || '';
     
-    if (!consigneeTin) return '';
+    // Sin Tax ID del consignatario → no generar línea OCI (campo opcional)
+    if (!consigneeTin || !consigneeTin.trim()) return '';
     
     const shipperCountry = (house.shipper || shipment.shipper).address?.countryCode?.toUpperCase() || 'CO';
+    const cleanTin = consigneeTin.replace(/\s/g, '');
     
-    // Lógica según país de origen (Ecuador sin prefijo EORI, otros países con prefijo)
-    if (shipperCountry === 'EC' || policy.ociFormat === 'withoutPrefix') {
-      return `OCI/${consigneeCountry}/CNE/T/${consigneeTin.replace(/\s/g, '')}`;
-    } else {
-      return `OCI/${consigneeCountry}/CNE/T/EORI${consigneeTin.replace(/\s/g, '')}`;
-    }
+    // US y CA no usan prefijo EORI, tampoco Ecuador origen ni policies sin prefijo
+    const noEoriPrefix = shipperCountry === 'EC' || consigneeCountry === 'US' || consigneeCountry === 'CA' || policy.ociFormat === 'withoutPrefix';
+    
+    return noEoriPrefix
+      ? `OCI/${consigneeCountry}/CNE/T/${cleanTin}`
+      : `OCI/${consigneeCountry}/CNE/T/EORI${cleanTin}`;
   }
 
   /**

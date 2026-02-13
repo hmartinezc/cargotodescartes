@@ -3,7 +3,8 @@ import { FunctionComponent, JSX } from 'preact';
 import { mockShipments } from './mockData';
 import { InternalShipment, ShipmentStatus, TransmissionLog } from './types';
 import { ChampModal } from './components/ChampModal';
-import { Plane, FileText, ArrowRight, CheckCircle, Clock, ShieldCheck, XCircle, Search, Wifi, Package, MapPin, Building, User, Scale, Layers, Send, ChevronRight } from 'lucide-preact';
+import { FullScreenAwbView, FullScreenViewMode } from './components/FullScreenAwbView';
+import { Plane, FileText, ArrowRight, CheckCircle, Clock, ShieldCheck, XCircle, Search, Wifi, Package, MapPin, Building, User, Scale, Layers, Send, ChevronRight, Monitor, Zap } from 'lucide-preact';
 
 // ============================================================
 // COMPONENTE: Vista de AWB Única (bonita, sin buscador)
@@ -294,6 +295,10 @@ const App: FunctionComponent = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
+  // ========== Fullscreen AWB View with mode support ==========
+  const [showFullScreen, setShowFullScreen] = useState(false);
+  const [fullScreenMode, setFullScreenMode] = useState<FullScreenViewMode>('review');
+
   // Detectar si es una sola AWB o múltiples
   const isSingleAwbMode = shipments.length === 1;
 
@@ -353,6 +358,30 @@ const App: FunctionComponent = () => {
         };
     }));
   }, []);
+
+  // Handler para abrir vista fullscreen con modo específico
+  const handleOpenFullScreen = useCallback((shipment: InternalShipment, mode: FullScreenViewMode) => {
+    setSelectedShipment(shipment);
+    setFullScreenMode(mode);
+    setShowFullScreen(true);
+  }, []);
+
+  // Handler para cuando la transmisión directa es exitosa (desde FullScreenAwbView transmit mode)
+  const handleTransmitSuccess = useCallback((shipmentId: string, summary: string) => {
+    console.log(`✅ Transmisión exitosa para ${shipmentId}: ${summary}`);
+    setShipments(prev => prev.map(s => {
+      if (s.id !== shipmentId) return s;
+      return { ...s, status: 'TRANSMITTED' as ShipmentStatus };
+    }));
+  }, []);
+
+  // Handler para abrir modal desde vista fullscreen
+  const handleOpenModalFromFullScreen = useCallback(() => {
+    setShowFullScreen(false);
+    if (selectedShipment) {
+      setIsModalOpen(true);
+    }
+  }, [selectedShipment]);
 
   const getStatusBadge = (status: ShipmentStatus) => {
     switch(status) {
@@ -419,11 +448,30 @@ const App: FunctionComponent = () => {
         
         {/* Renderizado condicional: Una sola AWB vs Múltiples */}
         {isSingleAwbMode ? (
-          <SingleAwbView 
-            shipment={shipments[0]} 
-            onOpenModal={handleOpenModal}
-            getStatusBadge={getStatusBadge}
-          />
+          <>
+            <SingleAwbView 
+              shipment={shipments[0]} 
+              onOpenModal={handleOpenModal}
+              getStatusBadge={getStatusBadge}
+            />
+            {/* Botones para abrir vista fullscreen con diferentes modos */}
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <button
+                onClick={() => handleOpenFullScreen(shipments[0], 'review')}
+                className="flex items-center gap-2 px-4 py-2 bg-white border border-purple-200 text-purple-700 rounded-lg hover:bg-purple-50 transition-colors text-sm font-medium shadow-sm"
+              >
+                <Monitor size={16} />
+                Vista Fullscreen (Revisar y Enviar)
+              </button>
+              <button
+                onClick={() => handleOpenFullScreen(shipments[0], 'transmit')}
+                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-semibold shadow-sm"
+              >
+                <Zap size={16} />
+                Vista Fullscreen (Transmitir Directo)
+              </button>
+            </div>
+          </>
         ) : (
           <MultipleAwbView
             shipments={filteredShipments}
@@ -446,6 +494,17 @@ const App: FunctionComponent = () => {
         </details>
 
       </main>
+
+      {/* FullScreen AWB View (Review or Transmit mode) */}
+      {showFullScreen && selectedShipment && (
+        <FullScreenAwbView
+          shipment={selectedShipment}
+          mode={fullScreenMode}
+          onOpenModal={handleOpenModalFromFullScreen}
+          onClose={() => { setShowFullScreen(false); setSelectedShipment(null); }}
+          onTransmitSuccess={handleTransmitSuccess}
+        />
+      )}
 
       {/* Modal */}
       <ChampModal 

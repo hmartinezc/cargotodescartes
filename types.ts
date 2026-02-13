@@ -80,11 +80,11 @@ export const AVAILABLE_SPH_CODES = {
 
 // Códigos SPH por defecto según aerolínea
 export const DEFAULT_SPH_BY_AIRLINE: Record<string, string[]> = {
-  '075': ['ECC', 'EAP', 'PER'],  // IBERIA
-  '145': ['EAP'],                 // LATAM
-  '985': ['EAP'],                 // LATAM Cargo
-  '074': ['EAP'],                 // KLM
-  'DEFAULT': ['EAP']              // Todas las demás
+  '075': ['ECC', 'EAP', 'PER', 'COL'],  // IBERIA
+  '145': ['EAP', 'PER', 'COL'],          // LATAM
+  '985': ['EAP', 'PER', 'COL'],          // LATAM Cargo
+  '074': ['EAP', 'PER', 'COL'],          // KLM
+  'DEFAULT': ['EAP', 'PER', 'COL']       // Todas las demás
 };
 
 // ============================================================
@@ -325,6 +325,13 @@ export interface Agent {
   phone?: string;         // Teléfono para DefinedTradeContact
   postalCode?: string;    // Código postal para FreightForwarderAddress
   street?: string;        // Dirección para FreightForwarderAddress
+  /** Sub-objeto de dirección para acceso anidado (agent.address.postalCode) */
+  address?: {
+    postalCode?: string;
+    street?: string;
+    countryCode?: string;
+    place?: string;
+  };
 }
 
 export type ShipmentStatus = 'DRAFT' | 'TRANSMITTED' | 'ACKNOWLEDGED' | 'REJECTED';
@@ -373,6 +380,8 @@ export interface InternalShipment {
   id: string;
   messageId?: string; // UUID/GUID opcional del backend para tracking de transmisiones
   status: ShipmentStatus;
+  /** Respuesta de Traxon (Descartes) tras transmisión */
+  traxonResponse?: any;
   
   /**
    * Proveedor de mensajería: 'CARGO_IMP' para mensajes EDI (FWB/FHL)
@@ -798,7 +807,7 @@ export interface CargoImpConfig {
  * Política CARGO-IMP específica por aerolínea
  */
 export interface CargoImpAirlinePolicy {
-  fwbVersion?: 'FWB/16' | 'FWB/17';
+  fwbVersion?: 'FWB/9' | 'FWB/16' | 'FWB/17';
   fhlVersion?: 'FHL/2' | 'FHL/4';
   includeUNB_UNZ?: boolean;
   ociWithEori?: boolean;
@@ -863,6 +872,18 @@ export interface CargoImpAirlinePolicy {
   
   /** País del emisor: 'EC' = Ecuador, 'CO' = Colombia */
   senderCountry?: 'EC' | 'CO';
+
+  // ==================== PROPIEDADES HEREDADAS DE AirlinePolicy ====================
+  /** Nombre de la aerolínea */
+  name?: string;
+  /** Código AWB prefix (3 dígitos) */
+  awbPrefix?: string;
+  /** Política (case = policy/10, option = policy%10) */
+  policy?: number;
+  /** Incluir UNB/UNZ EDIFACT */
+  includeUnbUnz?: boolean;
+  /** Formato OCI */
+  ociFormat?: string;
 }
 
 export interface ConnectorConfig {
@@ -916,16 +937,16 @@ export interface ConnectorConfig {
 // Configuración por defecto
 export const DEFAULT_CONNECTOR_CONFIG: ConnectorConfig = {
   sphByAirline: {
-    '075': ['ECC', 'EAP', 'PER'],  // IBERIA
-    '145': ['EAP'],                 // LATAM
-    '985': ['EAP'],                 // LATAM Cargo  
-    '074': ['EAP'],                 // KLM
-    '057': ['EAP'],                 // Air France
-    '020': ['EAP'],                 // Lufthansa
-    '006': ['EAP'],                 // Delta
-    '001': ['EAP'],                 // American Airlines
-    '205': ['EAP'],                 // Emirates
-    'DEFAULT': ['EAP']              // Todas las demás
+    '075': ['ECC', 'EAP', 'PER', 'COL'],  // IBERIA
+    '145': ['EAP', 'PER', 'COL'],          // LATAM
+    '985': ['EAP', 'PER', 'COL'],          // LATAM Cargo  
+    '074': ['EAP', 'PER', 'COL'],          // KLM
+    '057': ['EAP', 'PER', 'COL'],          // Air France
+    '020': ['EAP', 'PER', 'COL'],          // Lufthansa
+    '006': ['EAP', 'PER', 'COL'],          // Delta
+    '001': ['EAP', 'PER', 'COL'],          // American Airlines
+    '205': ['EAP', 'PER', 'COL'],          // Emirates
+    'DEFAULT': ['EAP', 'PER', 'COL']       // Todas las demás
   },
   // OCI adicionales por país de origen - vacío por defecto
   // El usuario puede agregar OCIs adicionales desde la configuración si lo requiere
@@ -959,7 +980,7 @@ export const DEFAULT_CONNECTOR_CONFIG: ConnectorConfig = {
     fhlVersion: 'FHL/4',
     includeUNB_UNZ: false,
     ociWithEori: false,  // false = Formato Ecuador/LATAM sin prefijo EORI
-    defaultSphCodes: ['EAP', 'PER'],
+    defaultSphCodes: ['EAP', 'PER', 'COL'],
     enabledFwbSegments: ['AWB', 'FLT', 'RTG', 'SHP', 'CNE', 'AGT', 'SSR', 'ACC', 'CVD', 'RTD', 'SPH', 'OCI', 'CER', 'ISU'],
     enabledFhlSegments: ['MBI', 'TXT', 'HBS', 'OCI'],
     // Control Number fijo para EDIFACT (si vacío se genera dinámicamente)
