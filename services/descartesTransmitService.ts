@@ -111,6 +111,24 @@ export interface BundleTransmissionResult {
   totalFailed: number;
 }
 
+interface ProxyTransmissionPayload {
+  descartesEndpoint: string;
+  username: string;
+  password: string;
+  message: string;
+  messageType: 'FWB' | 'FHL';
+  reference: string;
+  /** AWB master asociado al mensaje */
+  masterAwb?: string;
+  /** HAWB asociado al mensaje (vacío para FWB) */
+  houseAwb?: string;
+}
+
+interface TransmissionContext {
+  masterAwb?: string;
+  houseAwb?: string;
+}
+
 /**
  * Servicio para transmitir mensajes a Descartes
  */
@@ -221,7 +239,8 @@ export class DescartesTransmitService {
   async sendMessage(
     message: string,
     messageType: 'FWB' | 'FHL',
-    reference: string
+    reference: string,
+    context?: TransmissionContext
   ): Promise<TransmissionResult> {
     const timestamp = new Date().toISOString();
 
@@ -241,20 +260,25 @@ export class DescartesTransmitService {
       // Si hay proxyUrl, enviar al proxy del backend (evita CORS)
       if (this.credentials.proxyUrl) {
         console.log(`🔄 Usando proxy: ${this.credentials.proxyUrl}`);
+        const proxyPayload: ProxyTransmissionPayload = {
+          // Datos que el proxy necesita para hacer la llamada a Descartes
+          descartesEndpoint: this.credentials.endpoint,
+          username: this.credentials.username,
+          password: this.credentials.password,
+          message: message,
+          messageType: messageType,
+          reference: reference,
+          // Campos nuevos para logging backend (compatibles hacia atrás)
+          masterAwb: context?.masterAwb,
+          houseAwb: context?.houseAwb
+        };
+
         response = await fetch(this.credentials.proxyUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({
-            // Datos que el proxy necesita para hacer la llamada a Descartes
-            descartesEndpoint: this.credentials.endpoint,
-            username: this.credentials.username,
-            password: this.credentials.password,
-            message: message,
-            messageType: messageType,
-            reference: reference
-          })
+          body: JSON.stringify(proxyPayload)
         });
       } else {
         // Llamada directa a Descartes (puede fallar por CORS)
@@ -348,7 +372,10 @@ export class DescartesTransmitService {
 
     // 1. Enviar FWB (Master) primero
     console.log(`📤 Transmitiendo FWB ${awbNumber} a Descartes...`);
-    const fwbResult = await this.sendMessage(fwbMessage, 'FWB', awbNumber);
+    const fwbResult = await this.sendMessage(fwbMessage, 'FWB', awbNumber, {
+      masterAwb: awbNumber,
+      houseAwb: ''
+    });
     
     if (fwbResult.success) {
       totalSuccess++;
@@ -365,7 +392,10 @@ export class DescartesTransmitService {
         const hawbNumber = hawbNumbers[i] || `HAWB-${i + 1}`;
         
         console.log(`📤 Transmitiendo FHL ${hawbNumber} (${i + 1}/${fhlMessages.length})...`);
-        const fhlResult = await this.sendMessage(fhlMessage, 'FHL', hawbNumber);
+        const fhlResult = await this.sendMessage(fhlMessage, 'FHL', hawbNumber, {
+          masterAwb: awbNumber,
+          houseAwb: hawbNumber
+        });
         fhlResults.push(fhlResult);
         
         if (fhlResult.success) {

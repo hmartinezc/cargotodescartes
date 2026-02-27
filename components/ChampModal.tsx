@@ -2725,6 +2725,44 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
         const housesWithIssues = fhlValidations.filter(f => f.result.totalErrors > 0 || f.result.totalWarnings > 0).length;
         const housesOk = fhlValidations.length - housesWithIssues;
 
+        const getIssuePartyContext = (
+          issue: { segment?: string; field?: string; message?: string; suggestion?: string },
+          house?: any
+        ): string | null => {
+          const issueText = `${issue.segment || ''} ${issue.field || ''} ${issue.message || ''} ${issue.suggestion || ''}`.toUpperCase();
+
+          const shipperName = (house?.shipper?.name || house?.shipperName || formData?.shipper?.name || '').trim();
+          const consigneeName = (house?.consignee?.name || house?.consigneeName || formData?.consignee?.name || '').trim();
+
+          const refersShipper =
+            issue.segment === 'SHP' ||
+            issueText.includes('SHP/') ||
+            issueText.includes('/SHP/') ||
+            issueText.includes('SHIPPER') ||
+            issueText.includes('EXPORTADOR') ||
+            issueText.includes('EXPORTER');
+
+          const refersConsignee =
+            issue.segment === 'CNE' ||
+            issueText.includes('CNE/') ||
+            issueText.includes('/CNE/') ||
+            issueText.includes('CONSIGNEE') ||
+            issueText.includes('CONSIGNATARIO') ||
+            issueText.includes('IMPORTER') ||
+            issueText.includes('IMPORTADOR') ||
+            issueText.includes('CNE/IM');
+
+          if (refersShipper) {
+            return `Exportador (SHP): ${shipperName || 'Sin nombre'}`;
+          }
+
+          if (refersConsignee) {
+            return `Importer/Consignee (CNE): ${consigneeName || 'Sin nombre'}`;
+          }
+
+          return null;
+        };
+
         return (
           <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
             <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full mx-4 overflow-hidden max-h-[85vh] flex flex-col">
@@ -2851,6 +2889,12 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
                               {segmentLabels[issue.segment] || issue.segment}
                             </span>
                             {issue.message}
+                            {(() => {
+                              const partyContext = getIssuePartyContext(issue);
+                              return partyContext ? (
+                                <p className="text-xs mt-0.5 opacity-80">{partyContext}</p>
+                              ) : null;
+                            })()}
                             {issue.suggestion && (
                               <p className="text-xs mt-0.5 opacity-70">Sugerencia: {issue.suggestion}</p>
                             )}
@@ -2897,6 +2941,7 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
                         const errors = fv.result.allIssues.filter(i => i.severity === 'error');
                         const warnings = fv.result.allIssues.filter(i => i.severity === 'warning');
                         const hasIssues = errors.length > 0 || warnings.length > 0;
+                        const houseBill = formData?.houseBills?.[fv.index];
                         
                         if (!hasIssues) {
                           return (
@@ -2931,6 +2976,12 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
                                       {segmentLabels[issue.segment] || issue.segment}
                                     </span>
                                     {issue.message}
+                                    {(() => {
+                                      const partyContext = getIssuePartyContext(issue, houseBill);
+                                      return partyContext ? (
+                                        <p className="mt-0.5 opacity-80">{partyContext}</p>
+                                      ) : null;
+                                    })()}
                                   </div>
                                 </div>
                               ))}

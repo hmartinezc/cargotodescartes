@@ -811,17 +811,67 @@ export const FullScreenAwbView: FunctionComponent<FullScreenAwbViewProps> = ({
   // Compute blocking errors: ONLY red errors (not warnings) block transmission
   const blockingErrors = useMemo(() => {
     if (!ediData) return [];
-    const errors: { source: string; message: string; segment: string; suggestion?: string }[] = [];
+    const errors: { source: string; message: string; segment: string; suggestion?: string; partyContext?: string }[] = [];
+
+    const getPartyContext = (
+      issue: { segment?: string; field?: string; message?: string; suggestion?: string },
+      hawbNumber?: string
+    ): string | undefined => {
+      const house = shipment.houseBills?.find(h => h.hawbNumber === hawbNumber);
+      const issueText = `${issue.segment || ''} ${issue.field || ''} ${issue.message || ''} ${issue.suggestion || ''}`.toUpperCase();
+
+      const shipperName = (house?.shipper?.name || house?.shipperName || shipment.shipper?.name || '').trim();
+      const consigneeName = (house?.consignee?.name || house?.consigneeName || shipment.consignee?.name || '').trim();
+
+      const refersShipper =
+        issue.segment === 'SHP' ||
+        issueText.includes('SHP/') ||
+        issueText.includes('/SHP/') ||
+        issueText.includes('SHIPPER') ||
+        issueText.includes('EXPORTADOR') ||
+        issueText.includes('EXPORTER');
+
+      const refersConsignee =
+        issue.segment === 'CNE' ||
+        issueText.includes('CNE/') ||
+        issueText.includes('/CNE/') ||
+        issueText.includes('CONSIGNEE') ||
+        issueText.includes('CONSIGNATARIO') ||
+        issueText.includes('IMPORTER') ||
+        issueText.includes('IMPORTADOR') ||
+        issueText.includes('CNE/IM');
+
+      if (refersShipper) {
+        return `Exportador (SHP): ${shipperName || 'Sin nombre'}`;
+      }
+      if (refersConsignee) {
+        return `Importer/Consignee (CNE): ${consigneeName || 'Sin nombre'}`;
+      }
+      return undefined;
+    };
+
     // FWB errors
     ediData.fwbValidation.allIssues
       .filter(i => i.severity === 'error')
-      .forEach(i => errors.push({ source: 'FWB', message: i.message, segment: i.segment, suggestion: i.suggestion }));
+      .forEach(i => errors.push({
+        source: 'FWB',
+        message: i.message,
+        segment: i.segment,
+        suggestion: i.suggestion,
+        partyContext: getPartyContext(i)
+      }));
     // FHL errors (only when sending houses)
     if (sendMode === 'masterAndHouses') {
       ediData.fhlValidations.forEach(entry => {
         entry.validation.allIssues
           .filter(i => i.severity === 'error')
-          .forEach(i => errors.push({ source: `FHL ${entry.hawbNumber}`, message: i.message, segment: i.segment, suggestion: i.suggestion }));
+          .forEach(i => errors.push({
+            source: `FHL ${entry.hawbNumber}`,
+            message: i.message,
+            segment: i.segment,
+            suggestion: i.suggestion,
+            partyContext: getPartyContext(i, entry.hawbNumber)
+          }));
       });
     }
     return errors;
@@ -1398,6 +1448,9 @@ export const FullScreenAwbView: FunctionComponent<FullScreenAwbViewProps> = ({
                       <span className="text-[10px] font-semibold text-slate-600">[{err.segment}]</span>
                     </div>
                     <div className="text-red-700">{err.message}</div>
+                    {err.partyContext && (
+                      <div className="text-[10px] text-red-700/85 mt-0.5 font-semibold">{err.partyContext}</div>
+                    )}
                     {err.suggestion && (
                       <div className="text-[10px] text-red-500/70 mt-0.5">💡 {err.suggestion}</div>
                     )}

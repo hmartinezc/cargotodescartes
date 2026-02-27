@@ -1643,18 +1643,19 @@ function normalizeOtherChargeEntitlement(entitlement: string | undefined): 'DueC
 // Normalizar un Party (Shipper/Consignee)
 function normalizeParty(party: any, defaultParty: any): any {
   if (!party) return defaultParty;
+  const address = party.address || party.Address || {};
   return {
     name: party.name || defaultParty.name,
     name2: party.name2 || '',
-    accountNumber: party.accountNumber || '',
-    taxId: party.taxId || party.nit || party.ruc || '', // Aceptar múltiples nombres
+    accountNumber: party.accountNumber || party.identifier || party.identificador || '',
+    taxId: party.taxId || party.identifier || party.identificador || party.nit || party.ruc || '', // Aceptar múltiples nombres
     address: {
-      street: party.address?.street || party.direccion || defaultParty.address.street,
-      street2: party.address?.street2 || '',
-      place: party.address?.place || party.address?.city || party.ciudad || defaultParty.address.place,
-      state: party.address?.state || party.address?.provincia || '',
-      countryCode: (party.address?.countryCode || party.address?.country || party.pais || defaultParty.address.countryCode).toUpperCase().substring(0, 2),
-      postalCode: party.address?.postalCode || party.address?.zip || ''
+      street: address.street || address.Street || party.direccion || defaultParty.address.street,
+      street2: address.street2 || address.Street2 || '',
+      place: address.place || address.Place || address.city || address.City || party.ciudad || defaultParty.address.place,
+      state: address.state || address.State || address.provincia || address.Provincia || '',
+      countryCode: (address.countryCode || address.CountryCode || address.country || address.Country || party.pais || defaultParty.address.countryCode).toUpperCase().trim().substring(0, 2),
+      postalCode: address.postalCode || address.PostalCode || address.zip || address.Zip || ''
     },
     contact: party.contact || defaultParty.contact || { identifier: 'TE', number: '' }
   };
@@ -1676,7 +1677,8 @@ function normalizeAgent(agent: any, defaultAgent: any): any {
 function normalizeHouseBill(house: any): any {
   // Extraer datos del shipper - puede venir como objeto o campos planos
   const shipperName = house.shipperName || house.shipper?.name || '';
-  const shipperTaxId = house.shipperTaxId || house.shipper?.taxId || '';
+  const shipperTaxId = house.shipperTaxId || house.shipperIdentifier || house.shipper?.taxId || house.shipper?.identifier || house.shipper?.accountNumber || '';
+  const shipperAccountNumber = house.shipperAccountNumber || house.shipper?.accountNumber || house.shipper?.identifier || '';
   const shipperAddress = house.shipperAddress || house.shipper?.address?.street || '';
   const shipperCity = house.shipperCity || house.shipper?.address?.place || '';
   const shipperCountry = house.shipperCountry || house.shipper?.address?.countryCode || '';
@@ -1686,7 +1688,8 @@ function normalizeHouseBill(house: any): any {
   
   // Extraer datos del consignee - puede venir como objeto o campos planos
   const consigneeName = house.consigneeName || house.consignee?.name || '';
-  const consigneeTaxId = house.consigneeTaxId || house.consignee?.taxId || '';
+  const consigneeTaxId = house.consigneeTaxId || house.consigneeIdentifier || house.consignee?.taxId || house.consignee?.identifier || house.consignee?.accountNumber || '';
+  const consigneeAccountNumber = house.consigneeAccountNumber || house.consignee?.accountNumber || house.consignee?.identifier || '';
   const consigneeAddress = house.consigneeAddress || house.consignee?.address?.street || '';
   const consigneeCity = house.consigneeCity || house.consignee?.address?.place || '';
   const consigneeCountry = house.consigneeCountry || house.consignee?.address?.countryCode || '';
@@ -1703,6 +1706,7 @@ function normalizeHouseBill(house: any): any {
     // Shipper campos planos para UI
     shipperName,
     shipperTaxId,
+    shipperAccountNumber,
     shipperAddress,
     shipperCity,
     shipperCountry,
@@ -1712,6 +1716,7 @@ function normalizeHouseBill(house: any): any {
     // Consignee campos planos para UI
     consigneeName,
     consigneeTaxId,
+    consigneeAccountNumber,
     consigneeAddress,
     consigneeCity,
     consigneeCountry,
@@ -1730,6 +1735,7 @@ function normalizeHouseBill(house: any): any {
     // Party completo para API Traxon (construido desde campos planos o existente)
     shipper: house.shipper ? normalizeParty(house.shipper, { name: '', address: { street: '', place: '', countryCode: 'CO', postalCode: '' } }) : (shipperName ? {
       name: shipperName,
+      accountNumber: shipperAccountNumber,
       taxId: shipperTaxId,
       address: {
         street: shipperAddress,
@@ -1742,6 +1748,7 @@ function normalizeHouseBill(house: any): any {
     } : undefined),
     consignee: house.consignee ? normalizeParty(house.consignee, { name: '', address: { street: '', place: '', countryCode: 'US', postalCode: '' } }) : (consigneeName ? {
       name: consigneeName,
+      accountNumber: consigneeAccountNumber,
       taxId: consigneeTaxId,
       address: {
         street: consigneeAddress,

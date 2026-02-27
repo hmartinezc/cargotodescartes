@@ -61,6 +61,7 @@ export function normalize(str: string, length: number = 0, withSpaces: boolean =
   str = str.replace(/\*/g, space);  // Asterisco
   str = str.replace(/&/g, space);  // Ampersand
   str = str.replace(/°/g, space);  // Grado
+  str = str.replace(/º/g, space).replace(/ª/g, space);  // Ordinales (Nº, 1ª)
   str = str.replace(/:/g, space);  // Dos puntos
   str = str.replace(/\n/g, space).replace(/\r/g, space);  // Saltos
   str = str.replace(/\+/g, space);  // Más
@@ -323,6 +324,33 @@ function getPostalCode(postalCode: string | undefined, country: string, agencyPo
   if (country === 'EC') return defaults.EC || '00000';
   if (country === 'CO') return defaults.CO || '110111';
   return defaults.DEFAULT || '10';
+}
+
+/**
+ * Obtiene código postal de agencia desde estructura anidada o plana
+ */
+function getAgencyPostalCode(agent: InternalShipment['agent'] | undefined): string | undefined {
+  return agent?.address?.postalCode || agent?.postalCode;
+}
+
+/**
+ * Normaliza teléfono para segmento /TE/ usando un único valor.
+ * Si viene compuesto (ej: 6741297/3132963292 o 6741297-3132963292), toma la primera parte.
+ * Retorna solo dígitos para evitar caracteres especiales inválidos en CARGO-IMP.
+ */
+function normalizePhoneForTe(phone: string | undefined): string {
+  if (!phone || !phone.trim()) return '';
+
+  const compactPhone = phone.trim().replace(/\s+/g, '');
+  const firstToken = compactPhone.split(/[\/-]/).find(token => token && token.trim().length > 0) || compactPhone;
+
+  const firstTokenDigits = firstToken.replace(/\D/g, '');
+  if (firstTokenDigits) {
+    return firstTokenDigits.substring(0, 25);
+  }
+
+  const compactDigits = compactPhone.replace(/\D/g, '');
+  return compactDigits.substring(0, 25);
 }
 
 /**
@@ -742,19 +770,19 @@ export class CargoImpService {
         break;
 
       case 'SHP':
-        const agencyPostalForShp = shipment.agent?.address?.postalCode;
+        const agencyPostalForShp = getAgencyPostalCode(shipment.agent);
         content = this.buildShpSegment(shipment.shipper, shipment.consignee?.address?.countryCode || '', shipment.awbNumber, version, agencyPostalForShp);
         fields = [
           { name: 'name', value: normalize(shipment.shipper.name, 35, true), originalValue: normalize(shipment.shipper.name, 35, true), maxLength: 35, required: true, modified: false },
           { name: 'address', value: normalize(shipment.shipper.address.street, 35, true), originalValue: normalize(shipment.shipper.address.street, 35, true), maxLength: 35, required: true, modified: false },
           { name: 'city', value: shipment.shipper.address.place, originalValue: shipment.shipper.address.place, maxLength: 17, required: true, modified: false },
           { name: 'country', value: shipment.shipper.address.countryCode, originalValue: shipment.shipper.address.countryCode, maxLength: 2, required: true, modified: false },
-          { name: 'postalCode', value: getPostalCode(shipment.shipper.address.postalCode, shipment.shipper.address.countryCode, agencyPostalForShp), originalValue: getPostalCode(shipment.shipper.address.postalCode, shipment.shipper.address.countryCode, agencyPostalForShp), maxLength: 9, required: false, modified: false }
+          { name: 'postalCode', value: getPostalCode(shipment.shipper.address.postalCode, shipment.shipper.address.countryCode, agencyPostalForShp), originalValue: getPostalCode(shipment.shipper.address.postalCode, shipment.shipper.address.countryCode, agencyPostalForShp), maxLength: 9, required: true, modified: false }
         ];
         break;
 
       case 'CNE':
-        const agencyPostalForCne = shipment.agent?.address?.postalCode;
+        const agencyPostalForCne = getAgencyPostalCode(shipment.agent);
         content = this.buildCneSegment(shipment.consignee, version, agencyPostalForCne);
         fields = [
           { name: 'name', value: normalize(shipment.consignee.name, 35, true), originalValue: normalize(shipment.consignee.name, 35, true), maxLength: 35, required: true, modified: false },
@@ -1089,7 +1117,7 @@ export class CargoImpService {
   private buildShpSegment(shipper: Party, consigneeCountry: string, awb: string, version: FwbVersion, agencyPostalCode?: string): string {
     const name = normalize(shipper.name, 35, true);
     const address = normalize(shipper.address.street, 35, true);
-    const city = shipper.address.place.toUpperCase();
+    const city = (shipper.address.place || '').toUpperCase();
     const country = shipper.address.countryCode.toUpperCase();
     // Usar código postal de agencia como fallback si el shipper no tiene
     let postalCode = getPostalCode(shipper.address.postalCode, country, agencyPostalCode);
@@ -1108,32 +1136,34 @@ export class CargoImpService {
     }
     
     // Teléfono si existe
-    if (shipper.contact?.number) {
-      result += `/TE/${shipper.contact.number.replace(/\s/g, '')}`;
+    const shipperPhone = normalizePhoneForTe(shipper.contact?.number);
+    if (shipperPhone) {
+      result += `/TE/${shipperPhone}`;
     }
     
     return result;
   }
 
   private buildCneSegment(consignee: Party, version: FwbVersion, agencyPostalCode?: string): string {
-    const name = normalize(consignee.name, 35, true);
+    const name = normalize(consignee.name, 35, true).substring(0, 35);
     const address = normalize(consignee.address.street, 35, true);
-    const city = consignee.address.place.toUpperCase();
-    const country = consignee.address.countryCode.toUpperCase();
-    const state = consignee.address.state?.toUpperCase() || '';
+    const city = (consignee.address.place || '').toUpperCase();
+    const country = (consignee.address.countryCode || '').toUpperCase().trim().substring(0, 2);
+    const state = (consignee.address.state || '').toUpperCase().trim().substring(0, 2);
     // Usar código postal de agencia como fallback si el consignee no tiene
     const postalCode = getPostalCode(consignee.address.postalCode, country, agencyPostalCode);
     
     let cityLine = city;
-    if (country === 'US' && state) {
+    if ((country === 'US' || country === 'CA') && state) {
       cityLine = `${city}/${state}`;
     }
     
     let result = `CNE\n/${name}\n/${address}\n/${cityLine}\n/${country}/${postalCode}`;
     
     // Teléfono si existe
-    if (consignee.contact?.number) {
-      result += `/TE/${consignee.contact.number.replace(/\s/g, '')}`;
+    const consigneePhone = normalizePhoneForTe(consignee.contact?.number);
+    if (consigneePhone) {
+      result += `/TE/${consigneePhone}`;
     }
     
     return result;
@@ -1442,15 +1472,15 @@ export class CargoImpService {
 
   private buildOthSegment(shipment: InternalShipment): string {
     if (!shipment.otherCharges || shipment.otherCharges.length === 0) return '';
-    
-    const lines: string[] = ['OTH'];
-    
+
+    let content = 'OTH';
+
     shipment.otherCharges.forEach(charge => {
       const pc = charge.paymentMethod === 'Prepaid' ? 'P' : 'C';
-      lines.push(`/${pc}/${charge.code}${formatNumber(charge.amount, 2)}`);
+      content += `/${pc}/${charge.code}${formatNumber(charge.amount, 2)}`;
     });
-    
-    return lines.join('\n');
+
+    return content;
   }
 
   private buildChargeSummary(shipment: InternalShipment, type: 'PPD' | 'COL'): string {
@@ -2007,9 +2037,12 @@ export class CargoImpService {
   private buildFhlOciSegment(house: InternalHouseBill, shipment: InternalShipment, policy: AirlinePolicy): string {
     const consignee = house.consignee || shipment.consignee;
     const consigneeCountry = consignee.address?.countryCode?.toUpperCase() || 'US';
-    const consigneeTin = consignee.taxId || consignee.accountNumber || '';
+    const houseConsigneeTin = (house.consignee?.taxId || house.consignee?.accountNumber || '').trim();
+    const masterConsigneeTin = (shipment.consignee?.taxId || shipment.consignee?.accountNumber || '').trim();
+    const consigneeTin = houseConsigneeTin || masterConsigneeTin;
     
-    // Sin Tax ID del consignatario → no generar línea OCI (campo opcional)
+    // Sin identificador en la house, usar taxId del consignee master (FWB)
+    // Si ambos faltan, no generar línea OCI
     if (!consigneeTin || !consigneeTin.trim()) return '';
     
     const shipperCountry = (house.shipper || shipment.shipper).address?.countryCode?.toUpperCase() || 'CO';
@@ -2038,7 +2071,7 @@ export class CargoImpService {
     const country = (shipper.address?.countryCode || 'CO').toUpperCase();
     
     // Código postal: usar agencia como fallback si el shipper de la house no tiene
-    const agencyPostalCode = shipment.agent?.address?.postalCode;
+    const agencyPostalCode = getAgencyPostalCode(shipment.agent);
     let postalCode = getPostalCode(shipper.address?.postalCode, country, agencyPostalCode);
     
     // Caso especial Ecuador → China (AWB 176 - Air China) usa código configurable
@@ -2052,7 +2085,15 @@ export class CargoImpService {
     
     // Código postal puede quedar vacío (ej: /CO/)
     const postalSuffix = postalCode ? postalCode : '';
-    return `SHP/${name}\n/${address}\n/${city}\n/${country}/${postalSuffix}`;
+    let result = `SHP/${name}\n/${address}\n/${city}\n/${country}/${postalSuffix}`;
+
+    // Agregar teléfono SOLO si existe en el shipper de la house
+    const phone = normalizePhoneForTe(house.shipper?.contact?.number);
+    if (phone) {
+      result += `/TE/${phone}`;
+    }
+
+    return result;
   }
 
   /**
@@ -2064,11 +2105,11 @@ export class CargoImpService {
       address: shipment.consignee.address
     };
     
-    const name = normalize(consignee.name || house.consigneeName, 35, true);
+    const name = normalize(consignee.name || house.consigneeName, 35, true).substring(0, 35);
     const address = normalize(consignee.address?.street || '', 35, true);
     const city = (consignee.address?.place || '').toUpperCase();
-    const country = (consignee.address?.countryCode || 'US').toUpperCase();
-    const state = consignee.address?.state?.toUpperCase() || '';
+    const country = (consignee.address?.countryCode || 'US').toUpperCase().trim().substring(0, 2);
+    const state = (consignee.address?.state || '').toUpperCase().trim().substring(0, 2);
     
     // Código postal con validación de longitud (máx 9 chars)
     let postalCode = consignee.address?.postalCode || '';
@@ -2081,7 +2122,7 @@ export class CargoImpService {
     
     // Ciudad con estado para USA
     let cityLine = city;
-    if (country === 'US' && state) {
+    if ((country === 'US' || country === 'CA') && state) {
       cityLine = `${city}/${state}`;
     }
     
@@ -2089,9 +2130,9 @@ export class CargoImpService {
     let result = `CNE/${name}\n/${address}\n/${cityLine}\n/${country}/${postalCode}`;
     
     // Agregar teléfono si existe (formato: /TE/número)
-    const phone = consignee.contact?.number;
+    const phone = normalizePhoneForTe(consignee.contact?.number);
     if (phone) {
-      result += `/TE/${phone.replace(/\s/g, '')}`;
+      result += `/TE/${phone}`;
     }
     
     return result;

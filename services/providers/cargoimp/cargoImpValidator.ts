@@ -147,6 +147,9 @@ const POSTAL_CODE = /^[A-Z0-9\-\s]{1,9}$/;
 /** Teléfono: hasta 25 chars (números, espacios, +, parens) */
 const PHONE_PATTERN = /^[0-9\s\+\(\)\-]{1,25}$/;
 
+/** Teléfono TE estricto: solo dígitos, hasta 25 chars */
+const PHONE_TE_STRICT = /^[0-9]{1,25}$/;
+
 /** Email pattern básico */
 const EMAIL_INDICATOR = /^(TE|FX|EM)$/;
 
@@ -1002,7 +1005,10 @@ function validatePartySegment(
       rule: `${segCode} [2/4]: Ciudad hasta 17[t] [FNA: ${segCode}0030]`
     });
   } else {
-    const cityParts = cityLine.replace(/^\//, '').split('/');
+    const normalizedCityLine = cityLine
+      .replace(/^\//, '')
+      .replace(/^LOC\//, '');
+    const cityParts = normalizedCityLine.split('/');
     const cityValue = cityParts[0].trim();
     if (cityValue.length > 17) {
       issues.push({
@@ -1087,7 +1093,7 @@ function validatePartySegment(
       // Validar contacto si existe
       if (postalParts.length >= 3) {
         const contactType = postalParts[1];
-        const contactValue = postalParts[2];
+        const contactValue = postalParts[2]?.trim() || '';
         
         if (!EMAIL_INDICATOR.test(contactType)) {
           issues.push({
@@ -1111,6 +1117,18 @@ function validatePartySegment(
             found: contactValue.substring(0, 30) + '...'
           });
         }
+
+        if (contactType === 'TE' && contactValue && !PHONE_TE_STRICT.test(contactValue)) {
+          issues.push({
+            severity: 'error',
+            segment: segCode,
+            field: 'contact',
+            message: `Teléfono del ${label} en /TE/ debe contener solo dígitos (sin símbolos, slash ni guiones)`,
+            rule: `${segCode} [2/4]: Contacto TE hasta 25[n] solo numérico [FNA: ${segCode}0055]`,
+            expected: 'Ej: 571234567890',
+            found: contactValue
+          });
+        }
       }
     } else {
       // No hay código postal
@@ -1125,29 +1143,44 @@ function validatePartySegment(
     }
   }
 
+  // Exportador (SHP): exigir presencia de teléfono /TE/, sin validar formato del número
+  if (segCode === 'SHP' && countryLine && !countryLine.includes('/TE/')) {
+    issues.push({
+      severity: 'error',
+      segment: segCode,
+      field: 'contact',
+      message: 'Falta teléfono del exportador. SHP debe incluir /TE/ junto al código postal.',
+      rule: 'SHP [2/4]: Contacto teléfono requerido para exportador [FNA: SHP0055]',
+      suggestion: 'Agregar /TE/<telefono> después del código postal en SHP'
+    });
+  }
+
   // Advertencias específicas para China (ACAS/PLACI)
   if (countryLine) {
     const countryCode = countryLine.replace(/^\//, '').split('/')[0].trim();
-    if (countryCode === 'CN' && segCode === 'CNE') {
-      // China exige teléfono válido del consignatario
+    if (countryCode === 'CN' && (segCode === 'CNE' || segCode === 'SHP')) {
+      const roleLabel = segCode === 'CNE' ? 'consignatario' : 'exportador';
+      // China exige contacto válido en SHP/CNE
       if (!countryLine.includes('/TE/') && !countryLine.includes('/FX/') && !countryLine.includes('/EM/')) {
         issues.push({
           severity: 'warning',
           segment: segCode,
           field: 'contact',
-          message: 'CHINA: El consignatario en China DEBE incluir teléfono válido (/TE/). Aduanas de China lo exige para ACAS/PLACI.',
-          rule: 'CNE China: Teléfono obligatorio para Risk Assessment',
+          message: `CHINA: El ${roleLabel} en China DEBE incluir contacto válido (preferible /TE/). Aduanas de China lo exige para ACAS/PLACI.`,
+          rule: `${segCode} China: Contacto obligatorio para Risk Assessment`,
           suggestion: 'Agregar /TE/número después del código postal'
         });
       }
-      // China: si no tiene empresa, usar PASSPORT o 9999CN para particulares
-      issues.push({
-        severity: 'info',
-        segment: segCode,
-        message: 'CHINA: Si el consignatario es particular (sin empresa), usar PASSPORT + número o "9999CN" como identificador en OCI.',
-        rule: 'OCI China: Regla para particulares CN',
-        suggestion: 'Agregar línea OCI: /CN/CNE/T/9999CN o /CN/CNE/P/PASSPORT_NUMBER'
-      });
+      if (segCode === 'CNE') {
+        // China: si no tiene empresa, usar PASSPORT o 9999CN para particulares
+        issues.push({
+          severity: 'info',
+          segment: segCode,
+          message: 'CHINA: Si el consignatario es particular (sin empresa), usar PASSPORT + número o "9999CN" como identificador en OCI.',
+          rule: 'OCI China: Regla para particulares CN',
+          suggestion: 'Agregar línea OCI: /CN/CNE/T/9999CN o /CN/CNE/P/PASSPORT_NUMBER'
+        });
+      }
     }
   }
 }
@@ -1885,27 +1918,34 @@ function validateOthSegment(lines: string[], issues: ValidationIssue[], segment:
   const content = segment.content;
   if (!content || content.trim() === '') return; // OTH es opcional
 
-  const othLines = content.split('\n').filter(l => l.trim());
-  
-  othLines.forEach((line, idx) => {
-    // Formato: OTH/P/AWC/NN.NN o OTH/C/AWA/NN.NN
-    const othMatch = line.match(/OTH\/([PC])\/([A-Z]{2,3})\/([\d.]+)/);
-    if (!othMatch) {
-      // Intentar detectar problemas
-      if (!line.startsWith('OTH/')) {
-        issues.push({
-          severity: 'warning',
-          segment: 'OTH',
-          line: idx + 1,
-          message: `Línea OTH con formato inválido`,
-          rule: 'OTH: Formato OTH/P_o_C/Código/Monto [FNA: OTH0010]',
-          found: line.substring(0, 40)
-        });
-      }
-      return;
-    }
+  const normalizedContent = content.replace(/\n/g, '');
 
-    const pcIndicator = othMatch[1];
+  if (!normalizedContent.startsWith('OTH')) {
+    issues.push({
+      severity: 'warning',
+      segment: 'OTH',
+      message: 'Segmento OTH debe iniciar con "OTH"',
+      rule: 'OTH: Tag obligatorio [FNA: OTH0010]',
+      found: normalizedContent.substring(0, 40)
+    });
+    return;
+  }
+
+  const chargeMatches = [...normalizedContent.matchAll(/\/([PC])\/([A-Z]{2,3})([\d.]+)/g)];
+
+  if (chargeMatches.length === 0) {
+    issues.push({
+      severity: 'warning',
+      segment: 'OTH',
+      message: 'No se encontraron cargos OTH válidos',
+      rule: 'OTH: Formato OTH/P_o_C/CódigoMonto [FNA: OTH0010]',
+      found: normalizedContent.substring(0, 40)
+    });
+    return;
+  }
+
+  chargeMatches.forEach((match, idx) => {
+    const pcIndicator = match[1];
     if (pcIndicator !== 'P' && pcIndicator !== 'C') {
       issues.push({
         severity: 'error',
@@ -3581,7 +3621,7 @@ function validateCountrySpecificRules(
     
     if (zipValues.length === 0) {
       issues.push({
-        severity: 'error',
+        severity: 'warning',
         segment: 'CNE',
         field: 'zip_US',
         message: `USA: Falta ZIP Code obligatorio para el consignee en destino USA. Sin ZIP válido el envío será RECHAZADO por CBP.`,
@@ -3596,7 +3636,7 @@ function validateCountrySpecificRules(
       if (/^\d{1,4}$/.test(foundZip)) {
         // ZIP muy corto (menos de 5 dígitos) - ej: "10", "123", "1234"
         issues.push({
-          severity: 'error',
+          severity: 'warning',
           segment: 'CNE',
           field: 'zip_US',
           message: `USA: ZIP Code "${foundZip}" es INVÁLIDO. Tiene solo ${foundZip.length} dígito(s). El ZIP Code de USA DEBE tener exactamente 5 dígitos.`,
