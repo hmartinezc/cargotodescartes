@@ -269,34 +269,73 @@ const DEFAULT_GLOBAL_CONFIG: CargoImpGlobalConfig = {
   defaultSignature: 'CARGOOP'
 };
 
+let cachedGlobalConfig: CargoImpGlobalConfig | null = null;
+let cachedConnectorConfigRaw: string | null = null;
+let cachedLegacyConfigRaw: string | null = null;
+
+function cloneGlobalConfig(config: CargoImpGlobalConfig): CargoImpGlobalConfig {
+  const senderIds = config.senderIds || DEFAULT_GLOBAL_CONFIG.senderIds;
+  const defaultPostalCodes = config.defaultPostalCodes || DEFAULT_GLOBAL_CONFIG.defaultPostalCodes;
+
+  return {
+    ...config,
+    senderIds: {
+      EC: { ...DEFAULT_GLOBAL_CONFIG.senderIds.EC, ...(senderIds.EC || {}) },
+      CO: { ...DEFAULT_GLOBAL_CONFIG.senderIds.CO, ...(senderIds.CO || {}) }
+    },
+    defaultPostalCodes: { ...DEFAULT_GLOBAL_CONFIG.defaultPostalCodes, ...defaultPostalCodes }
+  };
+}
+
 /**
  * Carga la configuración global desde localStorage (ConnectorConfig.cargoImp)
  */
 function loadGlobalConfig(): CargoImpGlobalConfig {
   if (typeof localStorage === 'undefined') return DEFAULT_GLOBAL_CONFIG;
   try {
+    const connectorConfigRaw = localStorage.getItem('traxon_connector_config');
+    const legacyConfigRaw = localStorage.getItem('cargoimp_global_config');
+
+    if (
+      cachedGlobalConfig &&
+      connectorConfigRaw === cachedConnectorConfigRaw &&
+      legacyConfigRaw === cachedLegacyConfigRaw
+    ) {
+      return cloneGlobalConfig(cachedGlobalConfig);
+    }
+
     // Primero intentar cargar desde ConnectorConfig
-    const connectorConfig = localStorage.getItem('traxon_connector_config');
-    if (connectorConfig) {
-      const parsed = JSON.parse(connectorConfig);
+    if (connectorConfigRaw) {
+      const parsed = JSON.parse(connectorConfigRaw);
       if (parsed.cargoImp) {
-        return {
+        const resolved = {
           ...DEFAULT_GLOBAL_CONFIG,
           controlNumber: parsed.cargoImp.controlNumber || DEFAULT_GLOBAL_CONFIG.controlNumber,
           senderId: parsed.cargoImp.senderId || DEFAULT_GLOBAL_CONFIG.senderId,
           defaultSignature: parsed.cargoImp.defaultSignature || DEFAULT_GLOBAL_CONFIG.defaultSignature
         };
+        cachedGlobalConfig = resolved;
+        cachedConnectorConfigRaw = connectorConfigRaw;
+        cachedLegacyConfigRaw = legacyConfigRaw;
+        return cloneGlobalConfig(resolved);
       }
     }
     // Fallback a configuración legacy
-    const saved = localStorage.getItem('cargoimp_global_config');
-    if (saved) {
-      return { ...DEFAULT_GLOBAL_CONFIG, ...JSON.parse(saved) };
+    if (legacyConfigRaw) {
+      const resolved = { ...DEFAULT_GLOBAL_CONFIG, ...JSON.parse(legacyConfigRaw) };
+      cachedGlobalConfig = resolved;
+      cachedConnectorConfigRaw = connectorConfigRaw;
+      cachedLegacyConfigRaw = legacyConfigRaw;
+      return cloneGlobalConfig(resolved);
     }
   } catch (e) {
     console.warn('Error loading CARGO-IMP global config:', e);
   }
-  return { ...DEFAULT_GLOBAL_CONFIG };
+  const fallback = { ...DEFAULT_GLOBAL_CONFIG };
+  cachedGlobalConfig = fallback;
+  cachedConnectorConfigRaw = null;
+  cachedLegacyConfigRaw = null;
+  return cloneGlobalConfig(fallback);
 }
 
 /**

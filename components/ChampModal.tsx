@@ -943,6 +943,91 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
   const [showPreTransmitReview, setShowPreTransmitReview] = useState(false);
   const [preTransmitTab, setPreTransmitTab] = useState<'validation' | 'preview'>('validation');
 
+  const preTransmitReviewData = useMemo(() => {
+    if (!showPreTransmitReview || !cargoImpFwb) return null;
+
+    const fwbValidation = validateCargoImpMessage(cargoImpFwb, cargoImpPolicyInfo?.policy);
+    const fhlValidations = (cargoImpFhl || []).map((fhlMsg: any, idx: number) => ({
+      index: idx,
+      hawb: formData?.houseBills?.[idx]?.hawbNumber || `House #${idx + 1}`,
+      result: validateCargoImpMessage(fhlMsg, cargoImpPolicyInfo?.policy)
+    }));
+
+    const segmentLabels: Record<string, string> = {
+      'FWB': 'Header', 'AWB': 'N° Guía', 'FLT': 'Vuelo', 'RTG': 'Ruta',
+      'SHP': 'Exportador (Shipper)', 'CNE': 'Consignatario (Consignee)', 'AGT': 'Agente',
+      'SSR': 'Serv. Especial', 'ACC': 'Contabilidad', 'CVD': 'Cargos',
+      'RTD': 'Tarifas', 'NG': 'Mercancía', 'NH': 'Código HTS', 'NV': 'Volumen',
+      'NS': 'SLAC', 'OTH': 'Otros Cargos', 'PPD': 'Prepaid', 'COL': 'Collect',
+      'CER': 'Certificación', 'ISU': 'Emisión', 'REF': 'Referencia',
+      'SPH': 'Manejo Especial', 'OCI': 'Info Aduanas', 'NFY': 'Notificar', 'FTR': 'Footer',
+      'MBI': 'Master Info', 'HBS': 'Resumen House', 'HTS': 'Arancelario', 'TXT': 'Texto Libre'
+    };
+
+    const fwbErrors = fwbValidation.allIssues.filter(i => i.severity === 'error');
+    const fwbWarnings = fwbValidation.allIssues.filter(i => i.severity === 'warning');
+    const totalFhlErrors = fhlValidations.reduce((sum, f) => sum + f.result.totalErrors, 0);
+    const totalFhlWarnings = fhlValidations.reduce((sum, f) => sum + f.result.totalWarnings, 0);
+    const totalErrors = fwbErrors.length + totalFhlErrors;
+    const totalWarnings = fwbWarnings.length + totalFhlWarnings;
+    const allClear = totalErrors === 0 && totalWarnings === 0;
+    const housesWithIssues = fhlValidations.filter(f => f.result.totalErrors > 0 || f.result.totalWarnings > 0).length;
+    const housesOk = fhlValidations.length - housesWithIssues;
+
+    const getIssuePartyContext = (
+      issue: { segment?: string; field?: string; message?: string; suggestion?: string },
+      house?: any
+    ): string | null => {
+      const issueText = `${issue.segment || ''} ${issue.field || ''} ${issue.message || ''} ${issue.suggestion || ''}`.toUpperCase();
+
+      const shipperName = (house?.shipper?.name || house?.shipperName || formData?.shipper?.name || '').trim();
+      const consigneeName = (house?.consignee?.name || house?.consigneeName || formData?.consignee?.name || '').trim();
+
+      const refersShipper =
+        issue.segment === 'SHP' ||
+        issueText.includes('SHP/') ||
+        issueText.includes('/SHP/') ||
+        issueText.includes('SHIPPER') ||
+        issueText.includes('EXPORTADOR') ||
+        issueText.includes('EXPORTER');
+
+      const refersConsignee =
+        issue.segment === 'CNE' ||
+        issueText.includes('CNE/') ||
+        issueText.includes('/CNE/') ||
+        issueText.includes('CONSIGNEE') ||
+        issueText.includes('CONSIGNATARIO') ||
+        issueText.includes('IMPORTER') ||
+        issueText.includes('IMPORTADOR') ||
+        issueText.includes('CNE/IM');
+
+      if (refersShipper) {
+        return `Exportador (SHP): ${shipperName || 'Sin nombre'}`;
+      }
+
+      if (refersConsignee) {
+        return `Importer/Consignee (CNE): ${consigneeName || 'Sin nombre'}`;
+      }
+
+      return null;
+    };
+
+    return {
+      fhlValidations,
+      segmentLabels,
+      fwbErrors,
+      fwbWarnings,
+      totalFhlErrors,
+      totalFhlWarnings,
+      totalErrors,
+      totalWarnings,
+      allClear,
+      housesWithIssues,
+      housesOk,
+      getIssuePartyContext
+    };
+  }, [showPreTransmitReview, cargoImpFwb, cargoImpFhl, cargoImpPolicyInfo?.policy, formData]);
+
   // Ejecutar validación eagerly para que el conteo de errores esté disponible
   // en cualquier tab (no solo cuando se visita el tab EDI)
   useEffect(() => {
@@ -2690,78 +2775,21 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
       {/* MODAL DE REVISIÓN PRE-TRANSMISIÓN */}
       {/* Muestra errores y alertas antes de enviar */}
       {/* ============================================================ */}
-      {showPreTransmitReview && cargoImpFwb && (() => {
-        // Validar FWB
-        const fwbValidation = validateCargoImpMessage(cargoImpFwb, cargoImpPolicyInfo?.policy);
-        
-        // Validar FHLs
-        const fhlValidations = (cargoImpFhl || []).map((fhlMsg: any, idx: number) => ({
-          index: idx,
-          hawb: formData?.houseBills?.[idx]?.hawbNumber || `House #${idx + 1}`,
-          result: validateCargoImpMessage(fhlMsg, cargoImpPolicyInfo?.policy)
-        }));
-        
-        // Agrupar errores FWB por segmento con descripciones legibles
-        const segmentLabels: Record<string, string> = {
-          'FWB': 'Header', 'AWB': 'N° Guía', 'FLT': 'Vuelo', 'RTG': 'Ruta',
-          'SHP': 'Exportador (Shipper)', 'CNE': 'Consignatario (Consignee)', 'AGT': 'Agente',
-          'SSR': 'Serv. Especial', 'ACC': 'Contabilidad', 'CVD': 'Cargos',
-          'RTD': 'Tarifas', 'NG': 'Mercancía', 'NH': 'Código HTS', 'NV': 'Volumen',
-          'NS': 'SLAC', 'OTH': 'Otros Cargos', 'PPD': 'Prepaid', 'COL': 'Collect',
-          'CER': 'Certificación', 'ISU': 'Emisión', 'REF': 'Referencia',
-          'SPH': 'Manejo Especial', 'OCI': 'Info Aduanas', 'NFY': 'Notificar', 'FTR': 'Footer',
-          'MBI': 'Master Info', 'HBS': 'Resumen House', 'HTS': 'Arancelario', 'TXT': 'Texto Libre'
-        };
-        
-        const fwbErrors = fwbValidation.allIssues.filter(i => i.severity === 'error');
-        const fwbWarnings = fwbValidation.allIssues.filter(i => i.severity === 'warning');
-        const totalFhlErrors = fhlValidations.reduce((sum, f) => sum + f.result.totalErrors, 0);
-        const totalFhlWarnings = fhlValidations.reduce((sum, f) => sum + f.result.totalWarnings, 0);
-        const totalErrors = fwbErrors.length + totalFhlErrors;
-        const totalWarnings = fwbWarnings.length + totalFhlWarnings;
-        const allClear = totalErrors === 0 && totalWarnings === 0;
-        
-        // Contar houses con problemas vs sin problemas
-        const housesWithIssues = fhlValidations.filter(f => f.result.totalErrors > 0 || f.result.totalWarnings > 0).length;
-        const housesOk = fhlValidations.length - housesWithIssues;
-
-        const getIssuePartyContext = (
-          issue: { segment?: string; field?: string; message?: string; suggestion?: string },
-          house?: any
-        ): string | null => {
-          const issueText = `${issue.segment || ''} ${issue.field || ''} ${issue.message || ''} ${issue.suggestion || ''}`.toUpperCase();
-
-          const shipperName = (house?.shipper?.name || house?.shipperName || formData?.shipper?.name || '').trim();
-          const consigneeName = (house?.consignee?.name || house?.consigneeName || formData?.consignee?.name || '').trim();
-
-          const refersShipper =
-            issue.segment === 'SHP' ||
-            issueText.includes('SHP/') ||
-            issueText.includes('/SHP/') ||
-            issueText.includes('SHIPPER') ||
-            issueText.includes('EXPORTADOR') ||
-            issueText.includes('EXPORTER');
-
-          const refersConsignee =
-            issue.segment === 'CNE' ||
-            issueText.includes('CNE/') ||
-            issueText.includes('/CNE/') ||
-            issueText.includes('CONSIGNEE') ||
-            issueText.includes('CONSIGNATARIO') ||
-            issueText.includes('IMPORTER') ||
-            issueText.includes('IMPORTADOR') ||
-            issueText.includes('CNE/IM');
-
-          if (refersShipper) {
-            return `Exportador (SHP): ${shipperName || 'Sin nombre'}`;
-          }
-
-          if (refersConsignee) {
-            return `Importer/Consignee (CNE): ${consigneeName || 'Sin nombre'}`;
-          }
-
-          return null;
-        };
+      {showPreTransmitReview && cargoImpFwb && preTransmitReviewData && (() => {
+        const {
+          fhlValidations,
+          segmentLabels,
+          fwbErrors,
+          fwbWarnings,
+          totalFhlErrors,
+          totalFhlWarnings,
+          totalErrors,
+          totalWarnings,
+          allClear,
+          housesWithIssues,
+          housesOk,
+          getIssuePartyContext
+        } = preTransmitReviewData;
 
         return (
           <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 backdrop-blur-sm">

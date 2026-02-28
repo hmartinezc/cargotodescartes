@@ -31,7 +31,7 @@
  */
 
 import { FunctionComponent } from 'preact';
-import { useState, useCallback, useEffect } from 'preact/hooks';
+import { useState, useCallback, useEffect, useMemo } from 'preact/hooks';
 import { render } from 'preact';
 import { InternalShipment, ShipmentStatus, TransmissionLog, loadConnectorConfig, saveConnectorConfig, ConnectorConfig, DEFAULT_CONNECTOR_CONFIG } from '../types';
 import { ChampModal, CargoImpResult } from '../components/ChampModal';
@@ -1404,16 +1404,16 @@ const MultipleShipmentsView: FunctionComponent<MultipleShipmentsViewProps> = ({
   onClose
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  
-  const filteredShipments = shipments.filter(s => {
-    if (!searchQuery.trim()) return true;
-    const query = searchQuery.toLowerCase();
-    return (
-      s.awbNumber.toLowerCase().includes(query) ||
-      s.shipper.name.toLowerCase().includes(query) ||
-      s.consignee.name.toLowerCase().includes(query)
-    );
-  });
+
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const filteredShipments = useMemo(() => {
+    if (!normalizedQuery) return shipments;
+    return shipments.filter(s => (
+      s.awbNumber.toLowerCase().includes(normalizedQuery) ||
+      s.shipper.name.toLowerCase().includes(normalizedQuery) ||
+      s.consignee.name.toLowerCase().includes(normalizedQuery)
+    ));
+  }, [shipments, normalizedQuery]);
 
   const getStatusBadge = (status: ShipmentStatus) => {
     switch(status) {
