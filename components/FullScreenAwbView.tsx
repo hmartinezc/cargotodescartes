@@ -26,7 +26,13 @@ import {
 import { cargoImpService } from '../services/providers';
 import { validateCargoImpMessage, FwbValidationResult } from '../services/providers/cargoimp/cargoImpValidator';
 import { GeneratedCargoImpMessage } from '../services/providers/cargoimp/cargoImpTypes';
-import { DescartesTransmitService, BundleTransmissionResult } from '../services/descartesTransmitService';
+import {
+  DescartesTransmitService,
+  BundleTransmissionResult,
+  PublicTransmitResult,
+  createPublicTransmitResult,
+  createPublicTransmitErrorResult
+} from '../services/descartesTransmitService';
 
 /**
  * Modo de operación:
@@ -42,6 +48,7 @@ interface FullScreenAwbViewProps {
   getStatusBadge?: (status: ShipmentStatus) => JSX.Element;
   mode?: FullScreenViewMode;
   onTransmitSuccess?: (shipmentId: string, summary: string) => void;
+  onTransmitResult?: (result: PublicTransmitResult) => void;
   /** Rol del usuario: solo 'ADM' ve el botón "Editor Completo" */
   userRole?: string;
 }
@@ -947,16 +954,24 @@ export const FullScreenAwbView: FunctionComponent<FullScreenAwbViewProps> = ({
       const result = await service.sendBundle(masterMessage, shipment.awbNumber, houseMessages, hawbNumbers);
       setTransmissionResult(result);
 
+      if (onTransmitResult) {
+        onTransmitResult(createPublicTransmitResult(shipment.awbNumber, result));
+      }
+
       if (result.allSuccess && onTransmitSuccess) {
         onTransmitSuccess(shipment.id, result.summary);
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
       setValidationErrors([`Error de transmisión: ${errorMessage}`]);
+
+      if (onTransmitResult) {
+        onTransmitResult(createPublicTransmitErrorResult(shipment.awbNumber, errorMessage));
+      }
     } finally {
       setIsTransmitting(false);
     }
-  }, [validateForTransmit, ediData, shipment, onTransmitSuccess, sendMode, hasBlockingErrors]);
+  }, [validateForTransmit, ediData, shipment, onTransmitSuccess, onTransmitResult, sendMode, hasBlockingErrors]);
 
   const hasDescartesConfig = !!(shipment.descartesConfig?.endpoint && shipment.descartesConfig?.username && shipment.descartesConfig?.password);
 

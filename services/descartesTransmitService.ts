@@ -111,6 +111,64 @@ export interface BundleTransmissionResult {
   totalFailed: number;
 }
 
+/**
+ * Resultado público simplificado para integraciones externas.
+ *
+ * `success` indica que el ciclo de transmisión terminó y el conector obtuvo
+ * un resultado final del envío. Esto NO implica que todos los mensajes hayan
+ * sido aceptados por el proveedor; para eso usar `allSuccess`.
+ */
+export interface PublicTransmitResult {
+  /** true cuando el ciclo de envío terminó y hubo resultado final */
+  success: boolean;
+  /** true cuando todos los mensajes quedaron exitosos según la lógica actual */
+  allSuccess: boolean;
+  /** AWB master asociado */
+  awbNumber: string;
+  /** Timestamp ISO del callback */
+  timestamp: string;
+  /** Resumen legible mostrado por la UI */
+  summary: string;
+  /** Totales agregados cuando existe resultado bundle */
+  totalSent?: number;
+  totalSuccess?: number;
+  totalFailed?: number;
+  /** Error fatal si no se pudo completar el ciclo */
+  error?: string;
+}
+
+export function createPublicTransmitResult(
+  awbNumber: string,
+  result: BundleTransmissionResult,
+  timestamp: string = new Date().toISOString()
+): PublicTransmitResult {
+  return {
+    success: true,
+    allSuccess: result.allSuccess,
+    awbNumber,
+    timestamp,
+    summary: result.summary,
+    totalSent: result.totalSent,
+    totalSuccess: result.totalSuccess,
+    totalFailed: result.totalFailed
+  };
+}
+
+export function createPublicTransmitErrorResult(
+  awbNumber: string,
+  errorMessage: string,
+  timestamp: string = new Date().toISOString()
+): PublicTransmitResult {
+  return {
+    success: false,
+    allSuccess: false,
+    awbNumber,
+    timestamp,
+    summary: `❌ Error de transmisión: ${errorMessage}`,
+    error: errorMessage
+  };
+}
+
 interface ProxyTransmissionPayload {
   descartesEndpoint: string;
   username: string;

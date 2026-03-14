@@ -11,6 +11,9 @@ import {
   DescartesTransmitService, 
   BundleTransmissionResult,
   TransmissionResult,
+  PublicTransmitResult,
+  createPublicTransmitResult,
+  createPublicTransmitErrorResult,
   configureDescartesService,
   isDescartesConfigured 
 } from '../services/descartesTransmitService';
@@ -369,6 +372,7 @@ interface ChampModalProps {
   shipment: InternalShipment | null;
   onSave?: (shipment: InternalShipment) => void;
   onCopySuccess?: (id: string, ediContent: string) => void;
+  onTransmitResult?: (result: PublicTransmitResult) => void;
   /** Callback cuando el usuario guarda la configuración - emite JSON completo para persistir en BD */
   onSaveConfig?: (config: ConnectorConfig) => void;
   /** Rol del usuario: 'ADM' = admin (ve todo), otros = operator */
@@ -693,7 +697,7 @@ const ExpandableJsonSection: FunctionComponent<ExpandableJsonSectionProps> = ({
 // COMPONENTE PRINCIPAL DEL MODAL
 // ============================================================
 
-export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose, shipment, onSave, onCopySuccess, onSaveConfig, userRole }) => {
+export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose, shipment, onSave, onCopySuccess, onTransmitResult, onSaveConfig, userRole }) => {
   // Mapear rol externo a rol interno: ADM → admin, otros → operator
   const USER_ROLE: 'supervisor' | 'admin' | 'operator' = userRole?.toUpperCase() === 'ADM' ? 'admin' : 'operator';
   const [activeTab, setActiveTab] = useState<Tab>('summary');
@@ -1100,6 +1104,10 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
       setSendResult(result);
       setTransmitSuccess(transmissionResult.allSuccess);
 
+      if (onTransmitResult) {
+        onTransmitResult(createPublicTransmitResult(awbNumber, transmissionResult));
+      }
+
       // Notificar al componente padre si fue exitoso
       if (transmissionResult.allSuccess && onCopySuccess) {
         onCopySuccess(formData.id, `TRANSMITTED (EDI): ${awbNumber}`);
@@ -1112,10 +1120,14 @@ export const ChampModal: FunctionComponent<ChampModalProps> = ({ isOpen, onClose
         summary: `❌ Error de transmisión: ${errorMessage}`,
         fwbMessage: cargoImpFwb?.fullMessage
       });
+
+      if (onTransmitResult) {
+        onTransmitResult(createPublicTransmitErrorResult(formData.awbNumber, errorMessage));
+      }
     } finally {
       setIsTransmitting(false);
     }
-  }, [cargoImpFwb, cargoImpFhl, formData, sendMode, onCopySuccess]);
+  }, [cargoImpFwb, cargoImpFhl, formData, sendMode, onCopySuccess, onTransmitResult]);
 
   // Wrapper que muestra confirmación si hay errores de validación
   const handleTransmitToDescartes = useCallback(() => {

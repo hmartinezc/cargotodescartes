@@ -38,6 +38,7 @@ import { ChampModal, CargoImpResult } from '../components/ChampModal';
 import { FullScreenAwbView, FullScreenViewMode } from '../components/FullScreenAwbView';
 import { mockShipments } from '../mockData';
 import { getDefaultSphCodes, getAwbPrefix } from '../services/champService';
+import { PublicTransmitResult } from '../services/descartesTransmitService';
 import { Plane, Package, MapPin, Building, User, Scale, Layers, Send, ChevronRight, X } from 'lucide-preact';
 import tailwindStyles from './index.css?inline';
 
@@ -52,12 +53,28 @@ export interface CopyResult {
   ediContent?: string;        // Contenido EDI copiado (FWB + FHL)
 }
 
+export interface TransmitResult {
+  /** true cuando el ciclo de envío terminó y hubo resultado final */
+  success: boolean;
+  /** true cuando todos los mensajes quedaron exitosos */
+  allSuccess: boolean;
+  awbNumber: string;
+  timestamp: string;
+  summary: string;
+  totalSent?: number;
+  totalSuccess?: number;
+  totalFailed?: number;
+  error?: string;
+}
+
 // ============================================================
 // INTERFAZ PARA DATOS DE ENTRADA
 // ============================================================
 export interface ShipmentInputData extends Partial<InternalShipment> {
   // Callback opcional para recibir el resultado cuando se copia EDI
   onCopyResult?: (result: CopyResult) => void;
+  // Callback opcional para recibir el resultado final de transmisión
+  onTransmitResult?: (result: TransmitResult) => void;
   /** Rol del usuario: 'ADM' = admin (ve Editor Completo y todos los tabs), otros = limitado */
   userRole?: string;
 }
@@ -1199,6 +1216,7 @@ interface CargoImpConnectorAppProps {
     summary: string;
     ediContent?: string;
   }) => void;
+  onTransmitResult?: (result: PublicTransmitResult) => void;
   /** Callback cuando el usuario guarda la configuración desde el panel */
   onSaveConfig?: (config: ConnectorConfig) => void;
   /** Rol del usuario: 'ADM' = admin, otros roles = limitado */
@@ -1211,6 +1229,7 @@ const CargoImpConnectorApp: FunctionComponent<CargoImpConnectorAppProps> = ({
   onClose,
   isVisible,
   onCopyResult,
+  onTransmitResult,
   onSaveConfig,
   userRole
 }) => {
@@ -1344,6 +1363,7 @@ const CargoImpConnectorApp: FunctionComponent<CargoImpConnectorAppProps> = ({
           onClose={handleCloseModal}
           onOpenModal={handleOpenModalFromFullScreen}
           userRole={userRole}
+          onTransmitResult={onTransmitResult}
           onTransmitSuccess={(shipmentId, summary) => {
             console.log(`✅ Transmisión exitosa para ${shipmentId}: ${summary}`);
             if (onCopyResult) {
@@ -1361,6 +1381,7 @@ const CargoImpConnectorApp: FunctionComponent<CargoImpConnectorAppProps> = ({
           shipment={selectedShipment}
           onSave={handleSaveShipment}
           onCopySuccess={handleCopyResult}
+          onTransmitResult={onTransmitResult}
           onSaveConfig={onSaveConfig}
           userRole={userRole}
         />
@@ -1382,6 +1403,7 @@ const CargoImpConnectorApp: FunctionComponent<CargoImpConnectorAppProps> = ({
         shipment={selectedShipment}
         onSave={handleSaveShipment}
         onCopySuccess={handleCopyResult}
+        onTransmitResult={onTransmitResult}
         onSaveConfig={onSaveConfig}
         userRole={userRole}
       />
@@ -1874,6 +1896,8 @@ class CargoImpConnectorElement extends HTMLElement {
   
   // Callback para notificar resultado de copia EDI
   private copyResultCallback: ((result: CopyResult) => void) | null = null;
+  // Callback para notificar resultado final de transmisión
+  private transmitResultCallback: ((result: TransmitResult) => void) | null = null;
 
   // Rol del usuario: 'ADM' = admin (ve Editor Completo y tabs completos)
   private userRole: string = '';
@@ -1999,6 +2023,29 @@ class CargoImpConnectorElement extends HTMLElement {
                 composed: true 
               }));
             }}
+            onTransmitResult={(result) => {
+              const publicResult: TransmitResult = {
+                success: result.success,
+                allSuccess: result.allSuccess,
+                awbNumber: result.awbNumber,
+                timestamp: result.timestamp,
+                summary: result.summary,
+                totalSent: result.totalSent,
+                totalSuccess: result.totalSuccess,
+                totalFailed: result.totalFailed,
+                error: result.error
+              };
+
+              if (this.transmitResultCallback) {
+                this.transmitResultCallback(publicResult);
+              }
+
+              this.dispatchEvent(new CustomEvent('cargo-imp-transmit-result', {
+                detail: publicResult,
+                bubbles: true,
+                composed: true
+              }));
+            }}
             onSaveConfig={(config) => {
               // Disparar evento con la configuración completa para guardar en BD
               this.dispatchEvent(new CustomEvent('cargo-imp-config-saved', {
@@ -2023,7 +2070,7 @@ class CargoImpConnectorElement extends HTMLElement {
   /**
    * Abre el modal con un shipment específico (una sola AWB)
    * @param shipmentData - Datos del AWB (puede ser parcial, se completan con defaults)
-   *                       Puede incluir onCopyResult callback
+  *                       Puede incluir onCopyResult y onTransmitResult callbacks
    * 
    * EJEMPLO DE USO CON CALLBACK Y ROL:
    * ediModal.openWithShipment({
@@ -2044,6 +2091,12 @@ class CargoImpConnectorElement extends HTMLElement {
     } else {
       this.copyResultCallback = null;
     }
+
+    if (shipmentData.onTransmitResult) {
+      this.transmitResultCallback = shipmentData.onTransmitResult;
+    } else {
+      this.transmitResultCallback = null;
+    }
     
     // Guardar rol del usuario - buscar en cualquier variación de case
     // Soporta: userRole, UserRole, userrole, user_role, etc.
@@ -2055,7 +2108,7 @@ class CargoImpConnectorElement extends HTMLElement {
     console.log('[CargoImpConnector] userRole recibido:', this.userRole, '| raw keys:', Object.keys(shipmentData).filter(k => k.toLowerCase().includes('role')));
     
     // Extraer solo los datos del shipment (sin callback ni userRole)
-    const { onCopyResult, userRole, ...shipmentOnly } = shipmentData;
+    const { onCopyResult, onTransmitResult, userRole, ...shipmentOnly } = shipmentData;
     
     this.currentShipment = shipmentOnly;
     this.currentShipments = null;
@@ -2077,6 +2130,9 @@ class CargoImpConnectorElement extends HTMLElement {
    * @param options - Opciones adicionales como userRole
    */
   openWithShipments(shipmentsData: ShipmentInputData[], options?: { userRole?: string }) {
+    this.copyResultCallback = null;
+    this.transmitResultCallback = null;
+
     // Guardar rol si viene en options o en el primer shipment
     if (options?.userRole) {
       this.userRole = options.userRole;
@@ -2086,7 +2142,7 @@ class CargoImpConnectorElement extends HTMLElement {
 
     // Limpiar callbacks y userRole de cada shipment
     const shipmentsOnly = shipmentsData.map(s => {
-      const { onCopyResult, userRole, ...shipmentOnly } = s;
+      const { onCopyResult, onTransmitResult, userRole, ...shipmentOnly } = s;
       return shipmentOnly;
     });
     

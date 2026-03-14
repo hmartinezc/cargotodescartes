@@ -1514,9 +1514,10 @@ export class CargoImpService {
 
     let content = 'OTH';
 
-    shipment.otherCharges.forEach(charge => {
+    shipment.otherCharges.forEach((charge, idx) => {
       const pc = charge.paymentMethod === 'Prepaid' ? 'P' : 'C';
-      content += `/${pc}/${charge.code}${formatNumber(charge.amount, 2)}`;
+      const line = `/${pc}/${charge.code}${formatNumber(charge.amount, 2)}`;
+      content += idx === 0 ? line : `\n${line}`;
     });
 
     return content;
